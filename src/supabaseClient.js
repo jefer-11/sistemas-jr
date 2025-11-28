@@ -1,8 +1,9 @@
+// src/supabaseClient.js
 import { createClient } from '@supabase/supabase-js';
 
-// Estas líneas leen las llaves que guardaste en el archivo .env.local
+// ESTO LEE LAS VARIABLES VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// Aquí se crea la conexión oficial
+// Inicializa el cliente con las variables leídas
 export const supabase = createClient(supabaseUrl, supabaseKey);
