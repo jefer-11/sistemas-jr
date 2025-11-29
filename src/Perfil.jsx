@@ -1,8 +1,16 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { Lock, User, Save, ShieldCheck, AlertCircle, Building, Phone } from 'lucide-react';
+import { useAuth } from './AuthContext'; // <--- 1. IMPORTAMOS EL CONTEXTO
+import { Lock, User, Save, ShieldCheck, Building, Phone } from 'lucide-react';
 
-export function Perfil({ usuario }) {
+export function Perfil() {
+  const { usuario } = useAuth(); // <--- 2. OBTENEMOS EL USUARIO DIRECTAMENTE
+
+  // --- 3. 🛡️ ESCUDO DE SEGURIDAD (CRÍTICO) ---
+  // Si el usuario aún no carga, mostramos esto y evitamos el crash en la línea 14
+  if (!usuario) return <div style={{padding:'20px'}}>Cargando perfil...</div>;
+  // ---------------------------------------------
+
   const [passwords, setPasswords] = useState({ actual: '', nueva: '', confirmacion: '' });
   const [mensaje, setMensaje] = useState({ tipo: '', texto: '' });
   const [cargando, setCargando] = useState(false);
@@ -11,7 +19,8 @@ export function Perfil({ usuario }) {
   const [telefonoEmpresa, setTelefonoEmpresa] = useState('');
   const [loadingEmpresa, setLoadingEmpresa] = useState(false);
 
-  const esAdmin = usuario.rol === 'ADMIN';
+  // Ahora esta línea ya es segura porque el escudo nos protegió arriba
+  const esAdmin = usuario.rol === 'ADMIN' || usuario.rol === 'SUPER_ADMIN';
 
   useEffect(() => {
     if (esAdmin) cargarDatosEmpresa();
@@ -54,6 +63,7 @@ export function Perfil({ usuario }) {
 
     setCargando(true);
     try {
+      // Verificar contraseña actual
       const { data: usuarioValido } = await supabase
         .from('usuarios')
         .select('id')
@@ -63,6 +73,7 @@ export function Perfil({ usuario }) {
 
       if (!usuarioValido) throw new Error('Contraseña actual incorrecta.');
 
+      // Actualizar
       const { error } = await supabase.from('usuarios').update({ password_hash: passwords.nueva }).eq('id', usuario.id);
       if (error) throw error;
 
@@ -85,12 +96,12 @@ export function Perfil({ usuario }) {
       <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '10px', boxShadow: '0 4px 6px rgba(0,0,0,0.05)', marginBottom: '20px', border: '1px solid #e5e7eb' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
           <div style={{ width: '60px', height: '60px', backgroundColor: '#dbeafe', borderRadius: '50%', display: 'flex', justifyContent: 'center', alignItems: 'center', color: '#2563eb', fontSize: '24px', fontWeight: 'bold' }}>
-            {usuario.nombre_completo.charAt(0).toUpperCase()}
+            {usuario.nombre_completo?.charAt(0).toUpperCase()}
           </div>
           <div>
             <h3 style={{ margin: '0 0 5px 0' }}>{usuario.nombre_completo}</h3>
             <span style={{ backgroundColor: '#f3f4f6', padding: '4px 10px', borderRadius: '15px', fontSize: '12px', color: '#6b7280', fontWeight: 'bold' }}>
-              {usuario.rol} @ {usuario.empresas?.nombre_empresa}
+              {usuario.rol} @ {usuario.empresas?.nombre_empresa || 'Empresa'}
             </span>
           </div>
         </div>

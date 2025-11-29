@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { useAuth } from './AuthContext'; // <--- IMPORTACIÓN CLAVE
 import { Lock } from 'lucide-react';
 
-export function Caja({ usuario }) {
-  // --- 🛡️ ESCUDO DE SEGURIDAD (FIX DEL ERROR ROJO) ---
-  if (!usuario) return <div style={{padding:'20px'}}>Cargando Caja...</div>;
-  // ----------------------------------------------------
+export function Caja() {
+  const { usuario } = useAuth(); // <--- OBTENEMOS USUARIO DIRECTAMENTE
 
-  // 1. BLOQUEO AUTOMÁTICO 10 PM
+  // 🛡️ ESCUDO DE SEGURIDAD
+  if (!usuario) return <div style={{padding:'20px'}}>Cargando Caja...</div>;
+
   const horaActual = new Date().getHours();
   const esTarde = horaActual >= 22; 
   const esAdmin = usuario.rol === 'ADMIN' || usuario.rol === 'SUPER_ADMIN';
@@ -17,13 +18,11 @@ export function Caja({ usuario }) {
       <div style={{ textAlign: 'center', marginTop: '50px', color: '#dc2626' }}>
         <Lock size={64} />
         <h1>SISTEMA CERRADO</h1>
-        <p>El corte automático es a las 10:00 PM.</p>
-        <p>Los contadores se reiniciarán mañana.</p>
+        <p>Corte automático 10:00 PM.</p>
       </div>
     );
   }
 
-  // 2. LÓGICA DE CAJA
   const [loading, setLoading] = useState(false);
   const [base, setBase] = useState('');
   const [depositos, setDepositos] = useState('');
@@ -79,35 +78,27 @@ export function Caja({ usuario }) {
 
   return (
     <div style={{ maxWidth: '600px', margin: '0 auto', paddingBottom: '50px' }}>
-      <h2 style={{ textAlign:'center', color: '#111827' }}>Cierre Diario Simplificado</h2>
+      <h2 style={{ textAlign:'center', color: '#111827' }}>Cierre Diario</h2>
 
       <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', marginBottom: '15px' }}>
-        <h3 style={{ margin: '0 0 10px 0', color: '#16a34a' }}>1. Entradas (Dinero Recibido)</h3>
+        <h3 style={{ margin: '0 0 10px 0', color: '#16a34a' }}>1. Entradas</h3>
         <div style={filaInput}>
           <label>Base Inicial:</label>
           <input type="number" placeholder="0.00" value={base} onChange={e => setBase(e.target.value)} style={inputStyle} />
         </div>
         <div style={filaInput}>
-          <label>Depósitos Extra:</label>
+          <label>Depósitos:</label>
           <input type="number" placeholder="0.00" value={depositos} onChange={e => setDepositos(e.target.value)} style={inputStyle} />
         </div>
-        <div style={filaResumen}>
-          <span>+ Cobros (Automático):</span>
-          <strong>S/ {automatico.cobros.toFixed(2)}</strong>
-        </div>
-        <div style={{ textAlign: 'right', marginTop: '10px', fontWeight: 'bold', color: '#16a34a' }}>
-          Total Entradas: S/ {totalIngresos.toFixed(2)}
-        </div>
+        <div style={filaResumen}><span>+ Cobros (Auto):</span><strong>S/ {automatico.cobros.toFixed(2)}</strong></div>
+        <div style={{ textAlign: 'right', marginTop: '10px', fontWeight: 'bold', color: '#16a34a' }}>Total Entradas: S/ {totalIngresos.toFixed(2)}</div>
       </div>
 
       <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '10px', boxShadow: '0 2px 5px rgba(0,0,0,0.1)', marginBottom: '15px' }}>
-        <h3 style={{ margin: '0 0 10px 0', color: '#dc2626' }}>2. Salidas (Dinero Entregado)</h3>
-        <div style={filaResumen}>
-          <span>- Préstamos (Automático):</span>
-          <strong>S/ {automatico.prestamos.toFixed(2)}</strong>
-        </div>
+        <h3 style={{ margin: '0 0 10px 0', color: '#dc2626' }}>2. Salidas</h3>
+        <div style={filaResumen}><span>- Préstamos (Auto):</span><strong>S/ {automatico.prestamos.toFixed(2)}</strong></div>
         <div style={{ backgroundColor: '#fff1f2', padding: '10px', borderRadius: '8px', marginTop: '10px' }}>
-          <div style={{fontSize:'13px', fontWeight:'bold', marginBottom:'5px', color:'#991b1b'}}>Agregar Gasto:</div>
+          <div style={{fontSize:'13px', fontWeight:'bold', marginBottom:'5px', color:'#991b1b'}}>Gasto:</div>
           <form onSubmit={agregarGasto} style={{display:'flex', gap:'5px'}}>
             <input placeholder="Concepto" value={nuevoGasto.concepto} onChange={e => setNuevoGasto({...nuevoGasto, concepto: e.target.value})} style={{...inputSmall, flex:2}} />
             <input type="number" placeholder="Monto" value={nuevoGasto.monto} onChange={e => setNuevoGasto({...nuevoGasto, monto: e.target.value})} style={{...inputSmall, flex:1}} />
@@ -121,15 +112,12 @@ export function Caja({ usuario }) {
             ))}
           </ul>
         </div>
-        <div style={{ textAlign: 'right', marginTop: '10px', fontWeight: 'bold', color: '#dc2626' }}>
-          Total Salidas: S/ {totalSalidas.toFixed(2)}
-        </div>
+        <div style={{ textAlign: 'right', marginTop: '10px', fontWeight: 'bold', color: '#dc2626' }}>Total Salidas: S/ {totalSalidas.toFixed(2)}</div>
       </div>
 
       <div style={{ backgroundColor: '#111827', color: 'white', padding: '20px', borderRadius: '10px', textAlign: 'center' }}>
-        <div style={{ fontSize: '14px', opacity: 0.8 }}>DINERO A ENTREGAR HOY</div>
+        <div style={{ fontSize: '14px', opacity: 0.8 }}>DINERO A ENTREGAR</div>
         <div style={{ fontSize: '36px', fontWeight: 'bold' }}>S/ {totalEntregar.toFixed(2)}</div>
-        <div style={{ fontSize: '11px', marginTop: '5px', fontStyle: 'italic' }}>(Base + Depósitos + Cobros) - (Gastos + Préstamos)</div>
       </div>
     </div>
   );

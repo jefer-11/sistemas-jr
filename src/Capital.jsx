@@ -1,14 +1,15 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
+import { useAuth } from './AuthContext'; // <--- IMPORTACIÓN CLAVE
 import { TrendingUp, TrendingDown, DollarSign, Lock, ShieldCheck } from 'lucide-react';
 
-export function Capital({ usuario }) {
-  // --- 🛡️ ESCUDO DE SEGURIDAD (FIX DEL ERROR ROJO) ---
-  if (!usuario) return <div style={{padding:'20px'}}>Cargando perfil...</div>;
-  // ----------------------------------------------------
+export function Capital() {
+  const { usuario } = useAuth(); // <--- OBTENEMOS USUARIO DIRECTAMENTE AQUÍ
 
+  // 🛡️ ESCUDO DE SEGURIDAD
+  if (!usuario) return <div style={{padding:'20px'}}>Cargando perfil...</div>;
+  
   // SEGURIDAD: Solo Admin
-  // Ahora es seguro leer .rol porque ya verificamos que usuario existe arriba
   if (usuario.rol !== 'ADMIN' && usuario.rol !== 'SUPER_ADMIN') {
       return <div>Acceso Restringido</div>;
   }
@@ -24,7 +25,6 @@ export function Capital({ usuario }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Verificamos usuario de nuevo por si acaso antes de llamar a la BD
     if(usuario) cargarDatos();
   }, [usuario]);
 
@@ -61,7 +61,6 @@ export function Capital({ usuario }) {
     setLoading(true);
 
     try {
-      // FILTRO DE SEGURIDAD
       const { data: validUser } = await supabase
         .from('usuarios')
         .select('id')
@@ -69,9 +68,8 @@ export function Capital({ usuario }) {
         .eq('password_hash', form.password)
         .single();
 
-      if (!validUser) throw new Error("⛔ Contraseña de seguridad incorrecta.");
+      if (!validUser) throw new Error("⛔ Contraseña incorrecta.");
 
-      // Registrar movimiento
       const { error } = await supabase.from('movimientos_capital').insert([{
         empresa_id: usuario.empresa_id,
         usuario_id: usuario.id,
@@ -82,7 +80,7 @@ export function Capital({ usuario }) {
 
       if (error) throw error;
 
-      alert("Movimiento de capital registrado exitosamente.");
+      alert("Movimiento registrado.");
       setForm({ tipo: 'INYECCION', monto: '', descripcion: '', password: '' });
       cargarDatos();
 
@@ -97,14 +95,12 @@ export function Capital({ usuario }) {
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
       <h2 style={{ color: '#111827', textAlign: 'center' }}>💰 Gestión de Capital y Cartera</h2>
 
-      {/* TARJETA DE ESTADO */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' }}>
         <div style={{ backgroundColor: '#1e3a8a', color: 'white', padding: '20px', borderRadius: '12px', textAlign: 'center' }}>
-          <div style={{ fontSize: '14px', opacity: 0.8 }}>CAPITAL CIRCULANTE (En Calle)</div>
+          <div style={{ fontSize: '14px', opacity: 0.8 }}>CAPITAL CIRCULANTE</div>
           <div style={{ fontSize: '32px', fontWeight: 'bold' }}>S/ {cartera.capitalCirculante.toFixed(2)}</div>
           <div style={{ fontSize: '12px', marginTop: '5px' }}>{cartera.totalCreditos} Créditos Activos</div>
         </div>
-
         <div style={{ backgroundColor: '#065f46', color: 'white', padding: '20px', borderRadius: '12px', textAlign: 'center' }}>
           <div style={{ fontSize: '14px', opacity: 0.8 }}>GANANCIA ESPERADA</div>
           <div style={{ fontSize: '32px', fontWeight: 'bold' }}>S/ {cartera.gananciaProyectada.toFixed(2)}</div>
@@ -112,62 +108,37 @@ export function Capital({ usuario }) {
         </div>
       </div>
 
-      {/* FORMULARIO */}
       <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
         <h3 style={{ margin: '0 0 20px 0', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <ShieldCheck size={20} /> Movimiento de Capital Seguro
+          <ShieldCheck size={20} /> Movimiento Seguro
         </h3>
-        
         <form onSubmit={procesarMovimiento} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Tipo de Operación</label>
-            <div style={{ display: 'flex', gap: '20px', marginTop: '5px' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                <input type="radio" checked={form.tipo === 'INYECCION'} onChange={() => setForm({...form, tipo: 'INYECCION'})} /> 
-                <span style={{ color: '#16a34a', fontWeight: 'bold' }}>🟢 Inyectar Capital</span>
-              </label>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
-                <input type="radio" checked={form.tipo === 'RETIRO'} onChange={() => setForm({...form, tipo: 'RETIRO'})} /> 
-                <span style={{ color: '#dc2626', fontWeight: 'bold' }}>🔴 Retirar Utilidades</span>
-              </label>
-            </div>
+          <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '20px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+              <input type="radio" checked={form.tipo === 'INYECCION'} onChange={() => setForm({...form, tipo: 'INYECCION'})} /> 
+              <span style={{ color: '#16a34a', fontWeight: 'bold' }}>🟢 Inyectar</span>
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+              <input type="radio" checked={form.tipo === 'RETIRO'} onChange={() => setForm({...form, tipo: 'RETIRO'})} /> 
+              <span style={{ color: '#dc2626', fontWeight: 'bold' }}>🔴 Retirar</span>
+            </label>
           </div>
-
-          <div>
-            <label style={labelStyle}>Monto</label>
-            <input type="number" required value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} placeholder="0.00" />
+          <input type="number" required value={form.monto} onChange={e => setForm({...form, monto: e.target.value})} style={inputStyle} placeholder="Monto" />
+          <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: '6px', padding: '0 10px' }}>
+            <Lock size={16} color="#6b7280" />
+            <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} style={{...inputStyle, border:'none'}} placeholder="Clave Admin" />
           </div>
-
-          <div>
-            <label style={labelStyle}>Contraseña de Seguridad</label>
-            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: '6px', padding: '0 10px' }}>
-              <Lock size={16} color="#6b7280" />
-              <input type="password" required value={form.password} onChange={e => setForm({...form, password: e.target.value})} style={{...inputStyle, border:'none'}} placeholder="Tu clave de Admin" />
-            </div>
-          </div>
-
-          <div style={{ gridColumn: '1 / -1' }}>
-            <label style={labelStyle}>Motivo / Descripción</label>
-            <input type="text" required value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} style={inputStyle} placeholder="Ej: Aporte socio, Retiro semanal..." />
-          </div>
-
+          <input type="text" style={{gridColumn:'1/-1', ...inputStyle}} required value={form.descripcion} onChange={e => setForm({...form, descripcion: e.target.value})} placeholder="Motivo" />
           <button type="submit" disabled={loading} style={{ gridColumn: '1 / -1', backgroundColor: '#1f2937', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
-            {loading ? 'Validando...' : 'Confirmar Movimiento'}
+            {loading ? '...' : 'Confirmar'}
           </button>
         </form>
       </div>
 
-      {/* HISTORIAL */}
-      <h3 style={{ marginTop: '30px', color: '#6b7280' }}>Historial de Movimientos</h3>
-      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', backgroundColor: 'white', borderRadius: '8px', overflow: 'hidden' }}>
+      <h3 style={{ marginTop: '30px', color: '#6b7280' }}>Historial</h3>
+      <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px', backgroundColor: 'white', borderRadius: '8px' }}>
         <thead style={{ backgroundColor: '#f3f4f6', textAlign: 'left' }}>
-          <tr>
-            <th style={thStyle}>Fecha</th>
-            <th style={thStyle}>Tipo</th>
-            <th style={thStyle}>Monto</th>
-            <th style={thStyle}>Motivo</th>
-            <th style={thStyle}>Responsable</th>
-          </tr>
+          <tr><th style={thStyle}>Fecha</th><th style={thStyle}>Tipo</th><th style={thStyle}>Monto</th><th style={thStyle}>Motivo</th></tr>
         </thead>
         <tbody>
           {movimientos.map(m => (
@@ -176,7 +147,6 @@ export function Capital({ usuario }) {
               <td style={{ ...tdStyle, fontWeight: 'bold', color: m.tipo === 'INYECCION' ? '#16a34a' : '#dc2626' }}>{m.tipo}</td>
               <td style={tdStyle}>S/ {m.monto}</td>
               <td style={tdStyle}>{m.descripcion}</td>
-              <td style={tdStyle}>{m.usuarios?.nombre_completo}</td>
             </tr>
           ))}
         </tbody>
@@ -184,8 +154,6 @@ export function Capital({ usuario }) {
     </div>
   );
 }
-
-const labelStyle = { display: 'block', fontSize: '12px', fontWeight: 'bold', color: '#4b5563', marginBottom: '5px' };
 const inputStyle = { width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', boxSizing: 'border-box' };
 const thStyle = { padding: '10px', color: '#374151' };
 const tdStyle = { padding: '10px', color: '#4b5563' };
