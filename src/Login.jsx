@@ -15,6 +15,7 @@ export function Login({ onLoginSuccess }) {
 
     try {
       // 1. Buscamos el usuario Y los datos de su empresa
+      // Gracias a la política "RLS: Permitir SELECT publico...", esto funciona sin estar logueado.
       const { data, error } = await supabase
         .from('usuarios')
         .select(`
@@ -27,18 +28,45 @@ export function Login({ onLoginSuccess }) {
 
       if (error || !data) throw new Error('Usuario o contraseña incorrectos');
       
-      // 2. Validaciones de Seguridad SaaS
-      if (!data.estado) throw new Error('Tu usuario ha sido desactivado.');
-      if (!data.empresas.estado) throw new Error('El servicio de tu empresa está suspendido por falta de pago.');
-      
-      const hoy = new Date();
-      const vencimiento = new Date(data.empresas.fecha_vencimiento);
-      if (hoy > vencimiento) throw new Error('La licencia de tu empresa ha vencido.');
+      const isSuperAdmin = data.rol === 'SUPER_ADMIN';
 
-      // 3. Login Exitoso
+      // 2. Validaciones de Seguridad SaaS
+      if (!data.estado) throw new Error('Tu usuario ha sido desactivado por el administrador.');
+      
+      // EXCEPCIÓN: El Super Admin (Tú) puede entrar siempre, para reactivar empresas.
+      if (!isSuperAdmin) { 
+        if (!data.empresas.estado) throw new Error('El servicio de tu empresa está suspendido por falta de pago.');
+        
+        const hoy = new Date();
+        const vencimiento = new Date(data.empresas.fecha_vencimiento);
+        if (hoy > vencimiento) throw new Error('La licencia de tu empresa ha vencido. Contacta a soporte.');
+      }
+
+      // 3. INICIO DE SESIÓN SEGURO (JWT Injection)
+      // Aquí creamos la sesión que le dice a la base de datos "Soy de la empresa X".
+      
+      const customJWT = {
+        sub: data.id, 
+        rol: data.rol,
+        empresa_id: data.empresa_id // <--- ESTO ES LA CLAVE DE LA SEGURIDAD RLS
+      };
+
+      await supabase.auth.setSession({
+        access_token: JSON.stringify(customJWT),
+        token_type: 'bearer',
+        user: {
+          id: data.id,
+          aud: 'authenticated',
+          role: data.rol,
+          email: data.username + '@sistema.local' 
+        }
+      });
+      
+      // 4. Éxito: Pasamos el control al AuthContext
       onLoginSuccess(data);
 
     } catch (err) {
+      console.error(err);
       setError(err.message);
     } finally {
       setLoading(false);
@@ -60,37 +88,37 @@ export function Login({ onLoginSuccess }) {
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
           
           <div>
-            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Usuario</label>
-            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #ccc', borderRadius: '5px', padding: '10px' }}>
-              <User size={20} color="#666" style={{ marginRight: '10px' }} />
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', color: '#374151' }}>Usuario</label>
+            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: '6px', padding: '10px', backgroundColor: '#f9fafb' }}>
+              <User size={20} color="#6b7280" style={{ marginRight: '10px' }} />
               <input 
                 type="text" 
                 value={username} 
                 onChange={(e) => setUsername(e.target.value)} 
                 placeholder="Ej: admin"
-                style={{ border: 'none', outline: 'none', width: '100%' }}
+                style={{ border: 'none', outline: 'none', width: '100%', backgroundColor: 'transparent' }}
               />
             </div>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px' }}>Contraseña</label>
-            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #ccc', borderRadius: '5px', padding: '10px' }}>
-              <Lock size={20} color="#666" style={{ marginRight: '10px' }} />
+            <label style={{ display: 'block', fontWeight: 'bold', marginBottom: '5px', color: '#374151' }}>Contraseña</label>
+            <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #d1d5db', borderRadius: '6px', padding: '10px', backgroundColor: '#f9fafb' }}>
+              <Lock size={20} color="#6b7280" style={{ marginRight: '10px' }} />
               <input 
                 type="password" 
                 value={password} 
                 onChange={(e) => setPassword(e.target.value)} 
                 placeholder="••••••"
-                style={{ border: 'none', outline: 'none', width: '100%' }}
+                style={{ border: 'none', outline: 'none', width: '100%', backgroundColor: 'transparent' }}
               />
             </div>
           </div>
 
-          {error && <div style={{ color: '#dc2626', backgroundColor: '#fee2e2', padding: '10px', borderRadius: '5px', textAlign: 'center', fontSize: '14px' }}>{error}</div>}
+          {error && <div style={{ color: '#dc2626', backgroundColor: '#fee2e2', padding: '10px', borderRadius: '6px', textAlign: 'center', fontSize: '14px', border: '1px solid #fecaca' }}>{error}</div>}
 
-          <button type="submit" disabled={loading} style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '5px', border: 'none', cursor: 'pointer', fontWeight: 'bold', marginTop: '10px' }}>
-            {loading ? 'Validando Licencia...' : 'Ingresar'}
+          <button type="submit" disabled={loading} style={{ backgroundColor: '#2563eb', color: 'white', padding: '12px', borderRadius: '6px', border: 'none', cursor: 'pointer', fontWeight: 'bold', marginTop: '10px', transition: 'background-color 0.2s' }}>
+            {loading ? 'Validando...' : 'Ingresar al Sistema'}
           </button>
         </form>
       </div>

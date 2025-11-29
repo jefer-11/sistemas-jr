@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { Building, Power, Trash2, Shield, Calendar, PlusCircle, AlertTriangle, Search } from 'lucide-react';
+import { Building, Power, Trash2, Shield, Calendar, PlusCircle, AlertTriangle, Search, UserPlus } from 'lucide-react';
 
 export function SuperAdmin() {
   const [empresas, setEmpresas] = useState([]);
@@ -40,11 +40,19 @@ export function SuperAdmin() {
     }
   }
 
-  // --- 1. FUNCIÓN CREAR EMPRESA ---
+  // --- 1. FUNCIÓN CREAR EMPRESA Y DUEÑO ---
   async function crearEmpresa(e) {
     e.preventDefault();
+    
+    // Validaciones básicas
+    if (!nuevaEmpresa.nombre || !nuevaEmpresa.adminUser || !nuevaEmpresa.adminPass) {
+      return alert("Por favor completa todos los campos obligatorios.");
+    }
+
     setLoading(true);
     try {
+      console.log("Iniciando creación de empresa:", nuevaEmpresa.nombre);
+
       // A. Crear la Empresa
       const { data: emp, error: errEmp } = await supabase
         .from('empresas')
@@ -57,29 +65,35 @@ export function SuperAdmin() {
         .select()
         .single();
 
-      if (errEmp) throw errEmp;
+      if (errEmp) throw new Error("Error creando empresa: " + errEmp.message);
+      console.log("Empresa creada con ID:", emp.id);
 
-      // B. Crear el Usuario Admin
+      // B. Crear el Usuario Admin vinculado a esa empresa
       const { error: errUser } = await supabase
         .from('usuarios')
         .insert([{
-          empresa_id: emp.id,
+          empresa_id: emp.id, // ¡CRÍTICO! Vinculamos al ID de la nueva empresa
           nombre_completo: nuevaEmpresa.adminNombre,
           username: nuevaEmpresa.adminUser,
           password_hash: nuevaEmpresa.adminPass,
-          rol: 'ADMIN',
+          rol: 'ADMIN', // Rol de dueño
           estado: true
         }]);
 
-      if (errUser) throw errUser;
+      if (errUser) {
+        // Si falla el usuario, sería ideal borrar la empresa huérfana, pero por ahora solo avisamos.
+        throw new Error("La empresa se creó, pero falló al crear el usuario: " + errUser.message);
+      }
 
-      alert(`✅ Empresa "${nuevaEmpresa.nombre}" creada exitosamente.`);
+      alert(`✅ ¡Éxito! \n\nEmpresa: ${nuevaEmpresa.nombre}\nUsuario: ${nuevaEmpresa.adminUser}\nContraseña: ${nuevaEmpresa.adminPass}`);
+      
       setVista('lista');
       setNuevaEmpresa({ nombre: '', plan: 'BASICO', vencimiento: '', adminNombre: '', adminUser: '', adminPass: '' });
       cargarEmpresas();
 
     } catch (error) {
-      alert('Error al crear: ' + error.message);
+      console.error(error);
+      alert('❌ Ocurrió un error: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -103,14 +117,14 @@ export function SuperAdmin() {
   async function eliminarEmpresa(empresa) {
     if (empresa.id === 1) return alert("⛔ IMPOSIBLE eliminar la empresa matriz del sistema.");
 
-    // Confirmación de seguridad estricta
-    const confirmacion = prompt(`⚠️ PELIGRO: Estás a punto de eliminar "${empresa.nombre_empresa}".\n\nSe borrarán TODOS sus clientes, créditos y pagos.\n\nPara confirmar, escribe el nombre exacto de la empresa:`);
+    const confirmacion = prompt(`⚠️ PELIGRO: Estás a punto de eliminar "${empresa.nombre_empresa}".\n\nSe borrarán TODOS sus datos.\n\nPara confirmar, escribe el nombre exacto de la empresa:`);
 
     if (confirmacion !== empresa.nombre_empresa) {
       return alert("Cancelado: El nombre no coincide.");
     }
 
     setLoading(true);
+    // Al borrar la empresa, el 'ON DELETE CASCADE' de la DB borrará usuarios, clientes, etc.
     const { error } = await supabase.from('empresas').delete().eq('id', empresa.id);
     
     if (error) alert("Error al eliminar: " + error.message);
@@ -123,10 +137,14 @@ export function SuperAdmin() {
 
   // --- 4. FUNCIÓN RENOVAR SUSCRIPCIÓN ---
   async function agregarTiempo(empresa, meses) {
-    const fechaActual = new Date(empresa.fecha_vencimiento);
-    // Sumamos meses
-    fechaActual.setMonth(fechaActual.getMonth() + meses);
-    const nuevaFecha = fechaActual.toISOString().split('T')[0];
+    let fechaBase = new Date();
+    // Si aún no vence, sumamos a la fecha de vencimiento actual
+    if (new Date(empresa.fecha_vencimiento) > fechaBase) {
+        fechaBase = new Date(empresa.fecha_vencimiento);
+    }
+
+    fechaBase.setMonth(fechaBase.getMonth() + meses);
+    const nuevaFecha = fechaBase.toISOString().split('T')[0];
 
     const { error } = await supabase
       .from('empresas')
@@ -186,7 +204,7 @@ export function SuperAdmin() {
                 padding: '20px', 
                 borderRadius: '12px', 
                 boxShadow: '0 4px 6px rgba(0,0,0,0.05)', 
-                borderLeft: emp.estado ? '5px solid #16a34a' : '5px solid #dc2626',
+                borderLeft: emp.estado ? '5px solid #10b981' : '5px solid #dc2626',
                 opacity: emp.estado ? 1 : 0.8
               }}>
                 
@@ -215,7 +233,9 @@ export function SuperAdmin() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: '5px', marginBottom: '5px' }}>
                     <Calendar size={14}/> Vence: <strong>{emp.fecha_vencimiento}</strong>
                   </div>
-                  <div>👥 Usuarios registrados: {emp.usuarios[0]?.count || 0}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                    <UserPlus size={14}/> Usuarios registrados: <strong>{emp.usuarios[0]?.count || 0}</strong>
+                  </div>
                   {!emp.estado && <div style={{ color: '#dc2626', fontWeight: 'bold', marginTop: '5px' }}>⛔ SERVICIO SUSPENDIDO</div>}
                 </div>
 
@@ -245,7 +265,7 @@ export function SuperAdmin() {
           <h2 style={{ marginTop: 0, textAlign: 'center', color: '#374151' }}>🚀 Alta de Nuevo Cliente</h2>
           <form onSubmit={crearEmpresa} style={{ display: 'flex', flexDirection: 'column', gap: '15px', marginTop: '20px' }}>
             
-            <div style={{padding:'10px', backgroundColor:'#f9fafb', borderRadius:'8px'}}>
+            <div style={{padding:'15px', backgroundColor:'#f9fafb', borderRadius:'8px', border:'1px solid #e5e7eb'}}>
               <label style={labelStyle}>Datos de Facturación</label>
               <input required placeholder="Nombre de la Empresa" value={nuevaEmpresa.nombre} onChange={e => setNuevaEmpresa({...nuevaEmpresa, nombre: e.target.value})} style={inputStyle} />
               
@@ -259,10 +279,10 @@ export function SuperAdmin() {
               </div>
             </div>
 
-            <div style={{padding:'10px', backgroundColor:'#f9fafb', borderRadius:'8px'}}>
-              <label style={labelStyle}>Cuenta de Administrador</label>
+            <div style={{padding:'15px', backgroundColor:'#f0fdf4', borderRadius:'8px', border:'1px solid #bbf7d0'}}>
+              <label style={{...labelStyle, color: '#166534'}}>Cuenta de Dueño (Admin)</label>
               <input required placeholder="Nombre del Dueño" value={nuevaEmpresa.adminNombre} onChange={e => setNuevaEmpresa({...nuevaEmpresa, adminNombre: e.target.value})} style={inputStyle} />
-              <input required placeholder="Usuario de Acceso" value={nuevaEmpresa.adminUser} onChange={e => setNuevaEmpresa({...nuevaEmpresa, adminUser: e.target.value})} style={{...inputStyle, marginTop: '10px'}} />
+              <input required placeholder="Usuario de Acceso (Único)" value={nuevaEmpresa.adminUser} onChange={e => setNuevaEmpresa({...nuevaEmpresa, adminUser: e.target.value})} style={{...inputStyle, marginTop: '10px'}} />
               <input required placeholder="Contraseña Temporal" value={nuevaEmpresa.adminPass} onChange={e => setNuevaEmpresa({...nuevaEmpresa, adminPass: e.target.value})} style={{...inputStyle, marginTop: '10px'}} />
             </div>
 
