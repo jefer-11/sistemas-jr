@@ -3,12 +3,19 @@ import { supabase } from './supabaseClient';
 import { TrendingUp, TrendingDown, DollarSign, Lock, ShieldCheck } from 'lucide-react';
 
 export function Capital({ usuario }) {
+  // --- 🛡️ ESCUDO DE SEGURIDAD (FIX DEL ERROR ROJO) ---
+  if (!usuario) return <div style={{padding:'20px'}}>Cargando perfil...</div>;
+  // ----------------------------------------------------
+
   // SEGURIDAD: Solo Admin
-  if (usuario.rol !== 'ADMIN' && usuario.rol !== 'SUPER_ADMIN') return <div>Acceso Restringido</div>;
+  // Ahora es seguro leer .rol porque ya verificamos que usuario existe arriba
+  if (usuario.rol !== 'ADMIN' && usuario.rol !== 'SUPER_ADMIN') {
+      return <div>Acceso Restringido</div>;
+  }
 
   const [cartera, setCartera] = useState({
-    capitalCirculante: 0, // Dinero en la calle (Saldos)
-    gananciaProyectada: 0, // Intereses
+    capitalCirculante: 0, 
+    gananciaProyectada: 0, 
     totalCreditos: 0
   });
 
@@ -17,6 +24,7 @@ export function Capital({ usuario }) {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    // Verificamos usuario de nuevo por si acaso antes de llamar a la BD
     if(usuario) cargarDatos();
   }, [usuario]);
 
@@ -33,12 +41,12 @@ export function Capital({ usuario }) {
 
     creditos?.forEach(c => {
       circulante += c.saldo_restante;
-      ganancia += c.monto_interes; // Esto es una simplificación
+      ganancia += c.monto_interes; 
     });
 
     setCartera({ capitalCirculante: circulante, gananciaProyectada: ganancia, totalCreditos: creditos?.length || 0 });
 
-    // 2. Cargar Historial de Movimientos de Capital
+    // 2. Cargar Historial
     const { data: hist } = await supabase
       .from('movimientos_capital')
       .select('*, usuarios(nombre_completo)')
@@ -53,7 +61,7 @@ export function Capital({ usuario }) {
     setLoading(true);
 
     try {
-      // 1. FILTRO DE SEGURIDAD: Verificar contraseña del usuario actual
+      // FILTRO DE SEGURIDAD
       const { data: validUser } = await supabase
         .from('usuarios')
         .select('id')
@@ -63,7 +71,7 @@ export function Capital({ usuario }) {
 
       if (!validUser) throw new Error("⛔ Contraseña de seguridad incorrecta.");
 
-      // 2. Registrar el movimiento
+      // Registrar movimiento
       const { error } = await supabase.from('movimientos_capital').insert([{
         empresa_id: usuario.empresa_id,
         usuario_id: usuario.id,
@@ -89,9 +97,8 @@ export function Capital({ usuario }) {
     <div style={{ maxWidth: '800px', margin: '0 auto' }}>
       <h2 style={{ color: '#111827', textAlign: 'center' }}>💰 Gestión de Capital y Cartera</h2>
 
-      {/* TARJETA DE ESTADO DE CARTERA */}
+      {/* TARJETA DE ESTADO */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '20px', marginBottom: '30px' }}>
-        
         <div style={{ backgroundColor: '#1e3a8a', color: 'white', padding: '20px', borderRadius: '12px', textAlign: 'center' }}>
           <div style={{ fontSize: '14px', opacity: 0.8 }}>CAPITAL CIRCULANTE (En Calle)</div>
           <div style={{ fontSize: '32px', fontWeight: 'bold' }}>S/ {cartera.capitalCirculante.toFixed(2)}</div>
@@ -103,17 +110,15 @@ export function Capital({ usuario }) {
           <div style={{ fontSize: '32px', fontWeight: 'bold' }}>S/ {cartera.gananciaProyectada.toFixed(2)}</div>
           <div style={{ fontSize: '12px', marginTop: '5px' }}>Intereses por cobrar</div>
         </div>
-
       </div>
 
-      {/* FORMULARIO DE INYECCIÓN / RETIRO */}
+      {/* FORMULARIO */}
       <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', boxShadow: '0 4px 10px rgba(0,0,0,0.1)', border: '1px solid #e5e7eb' }}>
         <h3 style={{ margin: '0 0 20px 0', color: '#4b5563', display: 'flex', alignItems: 'center', gap: '10px' }}>
           <ShieldCheck size={20} /> Movimiento de Capital Seguro
         </h3>
         
         <form onSubmit={procesarMovimiento} style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '15px' }}>
-          
           <div style={{ gridColumn: '1 / -1' }}>
             <label style={labelStyle}>Tipo de Operación</label>
             <div style={{ display: 'flex', gap: '20px', marginTop: '5px' }}>
@@ -149,7 +154,6 @@ export function Capital({ usuario }) {
           <button type="submit" disabled={loading} style={{ gridColumn: '1 / -1', backgroundColor: '#1f2937', color: 'white', padding: '12px', border: 'none', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer' }}>
             {loading ? 'Validando...' : 'Confirmar Movimiento'}
           </button>
-
         </form>
       </div>
 
@@ -177,7 +181,6 @@ export function Capital({ usuario }) {
           ))}
         </tbody>
       </table>
-
     </div>
   );
 }

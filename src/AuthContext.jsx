@@ -2,11 +2,13 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { Login } from './Login';
 
+// Inicializamos el contexto con null para detectar errores
 const AuthContext = createContext(null);
 
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
+  // 1. CORRECCIÓN: Inicializar explícitamente en null
   const [usuarioSesion, setUsuarioSesion] = useState(null);
   const [pantallaActual, setPantallaActual] = useState('dashboard');
   const [clientePreseleccionado, setClientePreseleccionado] = useState(null);
@@ -15,14 +17,13 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let watchId;
     
-    // Si hay usuario logueado Y es cobrador Y el navegador tiene GPS
-    if (usuarioSesion && usuarioSesion.rol === 'COBRADOR' && 'geolocation' in navigator) {
+    // Usamos ?. (optional chaining) para evitar el error si usuarioSesion es null
+    if (usuarioSesion?.rol === 'COBRADOR' && 'geolocation' in navigator) {
       console.log("📡 Iniciando rastreo GPS en segundo plano...");
       
       watchId = navigator.geolocation.watchPosition(async (position) => {
         const { latitude, longitude } = position.coords;
         
-        // Enviamos la ubicación a Supabase silenciosamente
         await supabase
           .from('usuarios')
           .update({ 
@@ -39,14 +40,14 @@ export function AuthProvider({ children }) {
       });
     }
 
-    // Limpieza al cerrar sesión o desmontar
     return () => {
       if (watchId) navigator.geolocation.clearWatch(watchId);
     };
   }, [usuarioSesion]);
-  // ---------------------------------------------
-
-  const cerrarSesion = () => {
+  
+  // --- FUNCIONES DEL SISTEMA ---
+  const cerrarSesion = async () => {
+    await supabase.auth.signOut();
     setUsuarioSesion(null);
     setPantallaActual('dashboard');
   };
@@ -56,16 +57,20 @@ export function AuthProvider({ children }) {
     setPantallaActual('creditos');
   };
 
-  // Login: Si no hay sesión, mostramos Login
+  // 2. SEGURIDAD CRÍTICA:
+  // Si no hay usuarioSesion, MOSTRAMOS LOGIN y detenemos la ejecución aquí.
+  // Esto evita que el código de abajo intente leer propiedades de algo que no existe.
   if (!usuarioSesion) {
     return <Login onLoginSuccess={(datos) => setUsuarioSesion(datos)} />;
   }
   
+  // 3. CONSTRUCCIÓN SEGURA DEL CONTEXTO:
+  // Usamos ?. como doble medida de seguridad
   const contextValue = {
     usuario: usuarioSesion,
-    rol: usuarioSesion.rol,
-    esSuperAdmin: usuarioSesion.rol === 'SUPER_ADMIN',
-    esAdmin: usuarioSesion.rol === 'ADMIN' || usuarioSesion.rol === 'SUPER_ADMIN',
+    rol: usuarioSesion?.rol, // <--- AQUÍ ESTABA EL ERROR (Agregamos ?.)
+    esSuperAdmin: usuarioSesion?.rol === 'SUPER_ADMIN',
+    esAdmin: usuarioSesion?.rol === 'ADMIN' || usuarioSesion?.rol === 'SUPER_ADMIN',
     pantallaActual,
     setPantallaActual,
     clientePreseleccionado,
