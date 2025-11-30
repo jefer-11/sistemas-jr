@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
-import { Search, DollarSign, MapPin, MessageCircle, Lock, Eye, Trash2, X } from 'lucide-react';
+import { Search, DollarSign, MapPin, MessageCircle, Lock, Eye, Trash2, X, Calendar, Clock } from 'lucide-react';
 import { useAuth } from './AuthContext';
 
-// FÓRMULA HAVERSINE (Distancia)
+// FÓRMULA HAVERSINE (Visual)
 function getDistanciaMetros(lat1, lon1, lat2, lon2) {
     if(!lat1 || !lon1 || !lat2 || !lon2) return 0;
     const R = 6371e3; 
@@ -31,11 +31,13 @@ export function Cobranza() {
   const [creditos, setCreditos] = useState([]);
   const [miUbicacion, setMiUbicacion] = useState(null);
   const [cargando, setCargando] = useState(false);
-  const [busqueda, setBusqueda] = useState(''); // Estado del buscador
+  const [busqueda, setBusqueda] = useState('');
   const [montosRapidos, setMontosRapidos] = useState({});
   const [procesandoId, setProcesandoId] = useState(null);
   const [modalVisible, setModalVisible] = useState(false);
   const [reciboListo, setReciboListo] = useState(null);
+  
+  // CORRECCIÓN: Estado para ver historial
   const [verPagosDe, setVerPagosDe] = useState(null);
   const [listaPagosHoy, setListaPagosHoy] = useState([]);
 
@@ -105,7 +107,11 @@ export function Cobranza() {
       if (verPagosDe === creditoId) { setVerPagosDe(null); return; }
       setVerPagosDe(creditoId);
       const hoyInicio = new Date().toISOString().split('T')[0] + 'T00:00:00';
-      const { data } = await supabase.from('pagos').select('*').eq('credito_id', creditoId).gte('fecha_pago', hoyInicio).order('fecha_pago', { ascending: false });
+      const { data } = await supabase.from('pagos')
+        .select('*')
+        .eq('credito_id', creditoId)
+        .gte('fecha_pago', hoyInicio) // Solo hoy
+        .order('created_at', { ascending: false }); // Orden por hora
       setListaPagosHoy(data || []);
   };
 
@@ -122,12 +128,7 @@ export function Cobranza() {
   };
 
   const handleMontoChange = (id, val) => setMontosRapidos(p => ({ ...p, [id]: val }));
-  
-  // --- FILTRO DE BÚSQUEDA CORREGIDO ---
-  const listaFiltrada = creditos.filter(c => 
-    c.clientes.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()) ||
-    c.clientes.barrio?.toLowerCase().includes(busqueda.toLowerCase())
-  );
+  const listaFiltrada = creditos.filter(c => c.clientes.nombre_completo.toLowerCase().includes(busqueda.toLowerCase()));
 
   return (
     <div style={{ maxWidth: '800px', margin: '0 auto', paddingBottom: '80px' }}>
@@ -139,13 +140,7 @@ export function Cobranza() {
 
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', backgroundColor: 'white', padding: '12px', borderRadius: '8px', border: '2px solid #4b5563' }}>
         <Search color="#111827" />
-        <input 
-            type="text" 
-            placeholder="BUSCAR CLIENTE..." 
-            style={{ border: 'none', outline: 'none', width: '100%', fontSize: '16px', fontWeight: 'bold', textTransform: 'uppercase' }} 
-            value={busqueda} 
-            onChange={(e) => setBusqueda(e.target.value)} 
-        />
+        <input type="text" placeholder="BUSCAR CLIENTE..." style={{ border: 'none', outline: 'none', width: '100%', fontSize: '16px', fontWeight: 'bold', textTransform: 'uppercase' }} value={busqueda} onChange={(e) => setBusqueda(e.target.value)} />
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '15px' }}>
@@ -179,10 +174,29 @@ export function Cobranza() {
                 </div>
               </div>
 
+              {/* CORRECCIÓN VISUAL DEL INPUT: PLACEHOLDER Y SIGNO */}
               <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
                 <div style={{ position: 'relative', flex: 1 }}>
-                  <span style={{ position: 'absolute', left: '10px', top: '50%', transform: 'translateY(-50%)', color: '#111827', fontWeight: 'bold' }}>S/</span>
-                  <input type="number" placeholder={credito.valor_cuota} value={montoInput} onChange={(e) => handleMontoChange(credito.id, e.target.value)} style={{ width: '100%', padding: '12px 10px 12px 35px', borderRadius: '8px', border: '2px solid #4b5563', fontSize: '18px', fontWeight: 'bold', color: 'black', backgroundColor: 'white' }} />
+                  <span style={{ 
+                      position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', 
+                      color: '#111827', fontWeight: 'bold', fontSize: '18px', zIndex: 2
+                  }}>S/</span>
+                  <input 
+                    type="number" 
+                    placeholder={credito.valor_cuota} 
+                    value={montoInput}
+                    onChange={(e) => handleMontoChange(credito.id, e.target.value)}
+                    style={{ 
+                      width: '100%', 
+                      padding: '12px 10px 12px 40px', // Padding izquierdo extra para que no pise el "S/"
+                      borderRadius: '8px', 
+                      border: '2px solid #4b5563', 
+                      fontSize: '18px', 
+                      fontWeight: 'bold', 
+                      color: 'black', 
+                      backgroundColor: 'white' 
+                    }} 
+                  />
                 </div>
                 <button 
                   onClick={() => cobrarRapido(credito)}
@@ -196,19 +210,41 @@ export function Cobranza() {
               <div style={{marginTop:'10px', paddingTop:'10px', borderTop:'1px dashed #9ca3af', textAlign:'center'}}>
                   <button onClick={() => abrirHistorialPagos(credito.id)} style={{background:'none', border:'none', color:'#4b5563', fontSize:'13px', fontWeight:'bold', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', gap:'5px', width:'100%'}}>
                       {verPagosDe === credito.id ? <X size={14}/> : <Eye size={14}/>} 
-                      {verPagosDe === credito.id ? 'Cerrar Historial' : 'Ver/Corregir Pagos de Hoy'}
+                      {verPagosDe === credito.id ? 'Cerrar Historial' : 'Ver Pagos de Hoy'}
                   </button>
+
+                  {/* LISTA DE PAGOS TIPO EXCEL (CORREGIDA) */}
                   {verPagosDe === credito.id && (
-                      <div style={{marginTop:'10px', backgroundColor:'#f3f4f6', borderRadius:'8px', padding:'10px'}}>
-                          {listaPagosHoy.length === 0 ? <span style={{fontSize:'12px'}}>No hay pagos hoy.</span> : (
-                              listaPagosHoy.map(p => (
-                                  <div key={p.id} style={{display:'flex', justifyContent:'space-between', alignItems:'center', borderBottom:'1px solid #ddd', padding:'8px 0'}}>
-                                      <span style={{fontWeight:'bold'}}>S/ {p.monto}</span>
-                                      <span style={{fontSize:'11px'}}>{new Date(p.created_at).toLocaleTimeString()}</span>
-                                      <button onClick={() => eliminarPago(p, credito)} style={{background:'#fee2e2', color:'red', border:'none', borderRadius:'4px', padding:'4px 8px', cursor:'pointer'}}><Trash2 size={14}/> Borrar</button>
-                                  </div>
-                              ))
-                          )}
+                      <div style={{marginTop:'10px', backgroundColor:'white', borderRadius:'8px', border:'1px solid #ccc', overflow:'hidden'}}>
+                          <table style={{width:'100%', borderCollapse:'collapse', fontSize:'13px'}}>
+                              <thead style={{backgroundColor:'#e5e7eb', color:'#374151'}}>
+                                  <tr>
+                                      <th style={{padding:'8px', textAlign:'left'}}>Hora</th>
+                                      <th style={{padding:'8px', textAlign:'center'}}>Monto</th>
+                                      <th style={{padding:'8px', textAlign:'right'}}>Acción</th>
+                                  </tr>
+                              </thead>
+                              <tbody>
+                                  {listaPagosHoy.length === 0 ? <tr><td colSpan="3" style={{padding:'10px', textAlign:'center', color:'#999'}}>Sin pagos hoy.</td></tr> : (
+                                      listaPagosHoy.map(p => (
+                                          <tr key={p.id} style={{borderBottom:'1px solid #eee'}}>
+                                              {/* HORA EXACTA (AM/PM) */}
+                                              <td style={{padding:'8px', fontWeight:'500'}}>
+                                                  {new Date(p.created_at).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                                              </td>
+                                              <td style={{padding:'8px', textAlign:'center', fontWeight:'bold', color:'#16a34a'}}>
+                                                  S/ {p.monto}
+                                              </td>
+                                              <td style={{padding:'8px', textAlign:'right'}}>
+                                                  <button onClick={() => eliminarPago(p, credito)} style={{background:'#fee2e2', color:'#b91c1c', border:'1px solid #fecaca', borderRadius:'4px', padding:'4px 8px', cursor:'pointer', fontWeight:'bold'}}>
+                                                      BORRAR
+                                                  </button>
+                                              </td>
+                                          </tr>
+                                      ))
+                                  )}
+                              </tbody>
+                          </table>
                       </div>
                   )}
               </div>
@@ -217,6 +253,7 @@ export function Cobranza() {
         })}
       </div>
       
+      {/* Modal Recibo */}
       {modalVisible && reciboListo && (
         <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.6)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:1000}}>
           <div style={{background:'white', padding:'30px', borderRadius:'15px', width:'90%', maxWidth:'350px', textAlign:'center'}}>
