@@ -1,14 +1,20 @@
 :root {
-  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   line-height: 1.5;
   font-weight: 400;
   
-  /* PALETA ALTO CONTRASTE */
-  --bg-app: #f0f2f5;
-  --text-main: #111827; /* Casi negro */
-  --text-sec: #374151;  /* Gris oscuro */
-  --border-strong: #4b5563; /* Gris fuerte para bordes */
+  /* PALETA VISUAL ALTO CONTRASTE */
+  --bg-app: #f3f4f6;
+  --text-main: #111827; 
+  --text-sec: #374151;
   --primary: #2563eb;
+  --danger: #dc2626;
+  --success: #16a34a;
+}
+
+* {
+  box-sizing: border-box; /* Vital para que el padding no rompa el ancho */
+  -webkit-tap-highlight-color: transparent; /* Quita el destello azul al tocar en Android */
 }
 
 body {
@@ -17,33 +23,58 @@ body {
   color: var(--text-main);
   min-width: 320px;
   min-height: 100vh;
+  font-size: 16px; /* Tamaño base estándar para móviles */
+  -webkit-font-smoothing: antialiased;
 }
 
-/* INPUTS MÁS VISIBLES */
+/* --- OPTIMIZACIÓN TÁCTIL (TOUCH FRIENDLY) --- */
+
+/* Inputs grandes y fáciles de tocar (Evita zoom en iPhone/Android) */
 input, select, textarea {
-  border: 1px solid var(--border-strong) !important; /* Borde forzado oscuro */
+  border: 1px solid #6b7280 !important; /* Borde visible */
+  border-radius: 8px !important;
   color: #000000 !important; /* Texto negro puro */
   background-color: #ffffff;
-  font-size: 16px; /* Evita zoom en iPhone/Android */
+  font-size: 16px !important; /* Mínimo 16px para evitar zoom automático */
+  padding: 12px !important; /* Espacio cómodo para el dedo */
+  width: 100%;
+  margin-bottom: 10px;
   font-weight: 500;
 }
 
-input::placeholder {
-  color: #6b7280; /* Placeholder un poco más oscuro */
-}
-
 input:focus, select:focus {
-  outline: 2px solid var(--primary);
+  outline: none;
   border-color: var(--primary) !important;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
 }
 
-/* BOTONES MÁS FUERTES */
+/* Botones con sensación de App */
 button {
-  font-weight: bold;
-  opacity: 1;
+  font-family: inherit;
+  cursor: pointer;
+  touch-action: manipulation; /* Mejora la respuesta rápida al toque */
+  transition: transform 0.1s, opacity 0.1s;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  color: #000000;
-  font-weight: 700;
+button:active {
+  transform: scale(0.96); /* Efecto visual de "presionar" botón */
+  opacity: 0.9;
+}
+
+/* Tablas Responsivas */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Scroll suave nativo */
+div {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Ajustes para pantallas pequeñas (Celulares < 400px) */
+@media (max-width: 400px) {
+  h2 { font-size: 20px !important; }
+  h3 { font-size: 18px !important; }
+  button { font-size: 14px !important; }
 }

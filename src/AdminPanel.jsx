@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
 import { 
-  Activity, Search, TrendingUp, AlertTriangle, 
-  DollarSign, MapPin, Users, Plus, Trash2, Edit3, Save, RefreshCw 
+  Activity, Search, TrendingUp, AlertTriangle, CheckCircle, XCircle, 
+  DollarSign, MapPin, Users, Plus, Trash2, Edit3, Save, RefreshCw, 
+  ArrowRightCircle, ArrowRightLeft 
 } from 'lucide-react';
 
 export function AdminPanel() {
@@ -25,6 +26,11 @@ export function AdminPanel() {
   const [nuevaRuta, setNuevaRuta] = useState('');
   const [nuevoCobrador, setNuevoCobrador] = useState({ nombre: '', user: '', pass: '' });
   
+  // --- ESTADOS MIGRACIÓN (NUEVO) ---
+  const [rutaOrigen, setRutaOrigen] = useState('');
+  const [rutaDestino, setRutaDestino] = useState('');
+  const [conteoMigracion, setConteoMigracion] = useState(null);
+
   // --- SEGURIDAD ---
   const [itemEliminar, setItemEliminar] = useState(null);
   const [passConfirmacion, setPassConfirmacion] = useState('');
@@ -76,6 +82,51 @@ export function AdminPanel() {
     if (cobradoresData) setCobradores(cobradoresData);
   }
 
+  // --- LÓGICA MIGRACIÓN (NUEVO) ---
+  useEffect(() => {
+      if (rutaOrigen) contarClientesEnRuta(rutaOrigen);
+  }, [rutaOrigen]);
+
+  async function contarClientesEnRuta(idRuta) {
+      const { count } = await supabase.from('clientes').select('*', { count: 'exact', head: true }).eq('ruta_id', idRuta);
+      setConteoMigracion(count);
+  }
+
+  async function ejecutarMigracion() {
+      if (!rutaOrigen || !rutaDestino) return alert("Selecciona ambas rutas.");
+      if (rutaOrigen === rutaDestino) return alert("Las rutas deben ser diferentes.");
+      
+      const pass = prompt(`⚠️ ATENCIÓN: Vas a mover ${conteoMigracion} clientes.\nEsta acción cambiará su ruta pero mantendrá sus deudas y pagos.\n\nIngresa tu contraseña para confirmar:`);
+      if (!pass) return;
+
+      setLoading(true);
+      try {
+          // 1. Validar Password
+          const { data: admin } = await supabase.from('usuarios').select('id').eq('id', usuario.id).eq('password_hash', pass).single();
+          if (!admin) throw new Error("Contraseña incorrecta.");
+
+          // 2. Ejecutar cambio masivo
+          // Importante: No tocamos creditos ni pagos, ellos siguen al cliente
+          const { error } = await supabase.from('clientes')
+            .update({ ruta_id: rutaDestino }) // Movemos al cliente
+            .eq('ruta_id', rutaOrigen)
+            .eq('empresa_id', usuario.empresa_id);
+
+          if (error) throw error;
+
+          alert(`✅ ÉXITO: ${conteoMigracion} clientes fueron migrados a la nueva ruta.`);
+          setRutaOrigen('');
+          setRutaDestino('');
+          setConteoMigracion(null);
+          cargarDatosOperativos(); // Refrescar
+
+      } catch (error) {
+          alert("Error: " + error.message);
+      } finally {
+          setLoading(false);
+      }
+  }
+
   // --- LÓGICA AUDITORÍA ---
   async function buscarHistorial(e) {
     e.preventDefault();
@@ -103,7 +154,7 @@ export function AdminPanel() {
     if (malos === 0) setScore('VERDE'); else if (malos <= 2) setScore('AMARILLO'); else setScore('ROJO');
   };
 
-  // --- LÓGICA OPERATIVA ---
+  // --- LÓGICA OPERATIVA GENERAL ---
   const confirmarEliminacion = async (e) => {
     e.preventDefault();
     if (!passConfirmacion) return alert("Ingresa contraseña.");
@@ -173,13 +224,13 @@ export function AdminPanel() {
 
       {/* MENÚ PESTAÑAS */}
       <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', overflowX:'auto' }}>
-        <button onClick={() => setVista('mapa')} style={vista === 'mapa' ? btnActivo : btnInactivo}>📍 GPS en Vivo</button>
-        <button onClick={() => setVista('auditoria')} style={vista === 'auditoria' ? btnActivo : btnInactivo}>🔎 Auditoría</button>
-        <button onClick={() => setVista('finanzas')} style={vista === 'finanzas' ? btnActivo : btnInactivo}>📊 Finanzas</button>
+        <button onClick={() => setVista('mapa')} style={vista === 'mapa' ? btnActivo : btnInactivo}>📍 GPS ubicacion cobradores</button>
+        <button onClick={() => setVista('auditoria')} style={vista === 'auditoria' ? btnActivo : btnInactivo}>🔎 consultar datos de clientes</button>
+        <button onClick={() => setVista('finanzas')} style={vista === 'finanzas' ? btnActivo : btnInactivo}>📊 estado de cartera</button>
         <button onClick={() => setVista('operativo')} style={vista === 'operativo' ? btnActivo : btnInactivo}>⚙️ Gestión</button>
       </div>
 
-      {/* --- VISTA 0: MAPA GPS (CORREGIDO) --- */}
+      {/* VISTA 0: MAPA GPS */}
       {vista === 'mapa' && (
          <div style={{backgroundColor:'white', padding:'20px', borderRadius:'12px', border:'1px solid #d1d5db'}}>
              <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
@@ -202,10 +253,9 @@ export function AdminPanel() {
                                {cob.last_lat ? `📍 Reportó: ${calcularHaceCuanto(cob.last_seen)}` : '⚪ Sin señal reciente'}
                             </div>
                             
-                            {/* ENLACE CORREGIDO PARA QUE NO DE ERROR 404 */}
                             {cob.last_lat ? (
                                 <a 
-                                  href={`https://www.google.com/maps/search/?api=1&query=${cob.last_lat},${cob.last_lon}`} 
+                                  href={`http://googleusercontent.com/maps.google.com/search/?api=1&query=${cob.last_lat},${cob.last_lon}`} 
                                   target="_blank" 
                                   rel="noreferrer"
                                   style={{display:'block', marginTop:'10px', backgroundColor:'#2563eb', color:'white', textAlign:'center', padding:'8px', borderRadius:'6px', textDecoration:'none', fontWeight:'bold', fontSize:'14px'}}
@@ -273,6 +323,8 @@ export function AdminPanel() {
       {/* VISTA 3: OPERATIVO */}
       {vista === 'operativo' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+            
+            {/* GESTIÓN RUTAS */}
             <div>
                 <h3 style={{color:'#374151'}}>Rutas</h3>
                 <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
@@ -297,8 +349,38 @@ export function AdminPanel() {
                         </select>
                     </div>
                 ))}
+
+                {/* --- SECCIÓN NUEVA: MIGRACIÓN --- */}
+                <div style={{marginTop:'30px', borderTop:'2px dashed #ccc', paddingTop:'20px'}}>
+                    <h3 style={{color:'#d97706', display:'flex', alignItems:'center', gap:'5px'}}>
+                        <ArrowRightLeft size={20}/> Migración Masiva
+                    </h3>
+                    <div style={{backgroundColor:'#fff7ed', padding:'15px', borderRadius:'8px', border:'1px solid #fed7aa'}}>
+                        <p style={{fontSize:'12px', color:'#9a3412', margin:'0 0 10px 0'}}>Mover todos los clientes de una ruta a otra.</p>
+                        
+                        <label style={{fontSize:'12px', fontWeight:'bold'}}>Origen (Sacar de):</label>
+                        <select value={rutaOrigen} onChange={e => setRutaOrigen(e.target.value)} style={{width:'100%', marginBottom:'10px', padding:'8px'}}>
+                            <option value="">-- Seleccionar --</option>
+                            {rutas.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+                        </select>
+
+                        {conteoMigracion !== null && <div style={{fontSize:'12px', marginBottom:'10px', color:'blue'}}>Clientes encontrados: <strong>{conteoMigracion}</strong></div>}
+
+                        <label style={{fontSize:'12px', fontWeight:'bold'}}>Destino (Mover a):</label>
+                        <select value={rutaDestino} onChange={e => setRutaDestino(e.target.value)} style={{width:'100%', marginBottom:'15px', padding:'8px'}}>
+                            <option value="">-- Seleccionar --</option>
+                            {rutas.map(r => <option key={r.id} value={r.id}>{r.nombre}</option>)}
+                        </select>
+
+                        <button onClick={ejecutarMigracion} style={{width:'100%', background:'#d97706', color:'white', border:'none', padding:'10px', borderRadius:'6px', fontWeight:'bold', cursor:'pointer'}}>
+                            EJECUTAR MIGRACIÓN
+                        </button>
+                    </div>
+                </div>
+
             </div>
 
+            {/* GESTIÓN PERSONAL */}
             <div>
                 <h3 style={{color:'#374151'}}>Personal</h3>
                 <div style={{backgroundColor:'white', padding:'15px', borderRadius:'8px', border:'1px solid #ddd', marginBottom:'15px'}}>
