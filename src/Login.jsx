@@ -14,12 +14,12 @@ export function Login({ onLoginSuccess }) {
     setError(null);
 
     try {
-      // 1. Buscamos el usuario Y los datos de su empresa
+      // 1. CORRECCIÓN AQUÍ: Agregamos 'telefono_corporativo' a la consulta
       const { data, error } = await supabase
         .from('usuarios')
         .select(`
           *,
-          empresas ( id, nombre_empresa, estado, fecha_vencimiento )
+          empresas ( id, nombre_empresa, estado, fecha_vencimiento, telefono_corporativo )
         `)
         .eq('username', username)
         .eq('password_hash', password)
@@ -40,7 +40,7 @@ export function Login({ onLoginSuccess }) {
         if (hoy > vencimiento) throw new Error('La licencia de tu empresa ha vencido.');
       }
 
-      // 3. INICIO DE SESIÓN SEGURO (JWT Injection)
+      // 3. INICIO DE SESIÓN
       const customJWT = {
         sub: data.id, 
         rol: data.rol,

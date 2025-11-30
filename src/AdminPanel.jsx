@@ -1,317 +1,341 @@
 import React, { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
-import { Map, Users, Lock, Unlock, Plus, Activity, UserPlus, Trash2, MapPin, AlertTriangle, Edit3, Save, XCircle } from 'lucide-react';
+import { 
+  Activity, Search, TrendingUp, AlertTriangle, 
+  DollarSign, MapPin, Users, Plus, Trash2, Edit3, Save, RefreshCw 
+} from 'lucide-react';
 
 export function AdminPanel() {
   const { usuario } = useAuth();
+  const [vista, setVista] = useState('mapa'); 
+  const [loading, setLoading] = useState(false);
+  const [lastUpdate, setLastUpdate] = useState(new Date());
+
+  // --- ESTADOS AUDITORÍA Y FINANZAS ---
+  const [busquedaCliente, setBusquedaCliente] = useState('');
+  const [clienteEncontrado, setClienteEncontrado] = useState(null);
+  const [historialCreditos, setHistorialCreditos] = useState([]);
+  const [score, setScore] = useState('NEUTRO');
+  const [finanzas, setFinanzas] = useState({ dineroCalle: 0, cobradoHoy: 0, clientesActivos: 0, carteraVencida: 0 });
+
+  // --- ESTADOS OPERATIVOS ---
   const [rutas, setRutas] = useState([]);
   const [cobradores, setCobradores] = useState([]);
-  const [vista, setVista] = useState('dashboard');
-  const [loading, setLoading] = useState(false);
-
-  // Estados para formularios
   const [nuevaRuta, setNuevaRuta] = useState('');
   const [nuevoCobrador, setNuevoCobrador] = useState({ nombre: '', user: '', pass: '' });
-
-  // --- ESTADOS PARA EDICIÓN Y SEGURIDAD ---
-  const [itemEliminar, setItemEliminar] = useState(null); 
+  
+  // --- SEGURIDAD ---
+  const [itemEliminar, setItemEliminar] = useState(null);
   const [passConfirmacion, setPassConfirmacion] = useState('');
   const [loadingSecurity, setLoadingSecurity] = useState(false);
-  
-  // Estado para editar nombre de ruta
-  const [rutaEditando, setRutaEditando] = useState(null); 
+  const [rutaEditando, setRutaEditando] = useState(null);
   const [nombreEditado, setNombreEditado] = useState('');
 
   useEffect(() => {
-    cargarData();
-    const interval = setInterval(cargarData, 30000);
+    cargarTodo();
+    const interval = setInterval(cargarTodo, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  async function cargarData() {
-    try {
-      const { data: rutasData } = await supabase.from('rutas').select(`*, usuarios (nombre_completo)`).eq('empresa_id', usuario.empresa_id).order('id', { ascending: true });
-      const { data: cobradoresData } = await supabase.from('usuarios').select('*').eq('empresa_id', usuario.empresa_id).eq('rol', 'COBRADOR').order('nombre_completo', { ascending: true });
-      if (rutasData) setRutas(rutasData);
-      if (cobradoresData) setCobradores(cobradoresData);
-    } catch (error) { console.error(error); }
+  async function cargarTodo() {
+    await cargarFinanzasGlobales();
+    await cargarDatosOperativos();
+    setLastUpdate(new Date());
   }
 
-  // --- LÓGICA DE ELIMINACIÓN SEGURA ---
-  const solicitarEliminacion = (tipo, data) => {
-    setItemEliminar({ tipo, data });
-    setPassConfirmacion('');
+  // --- CARGA DE DATOS ---
+  async function cargarFinanzasGlobales() {
+    const hoyInicio = new Date().toISOString().split('T')[0] + 'T00:00:00';
+    const hoyFin = new Date().toISOString().split('T')[0] + 'T23:59:59';
+
+    const { data: creditos } = await supabase.from('creditos').select('saldo_restante, estado, fecha_fin_estimada').eq('empresa_id', usuario.empresa_id).eq('estado', 'ACTIVO');
+    const { data: pagos } = await supabase.from('pagos').select('monto').eq('empresa_id', usuario.empresa_id).gte('fecha_pago', hoyInicio).lte('fecha_pago', hoyFin);
+    
+    let totalCalle = 0;
+    let totalVencido = 0;
+    const fechaHoy = new Date();
+
+    creditos?.forEach(c => {
+      totalCalle += c.saldo_restante;
+      if (new Date(c.fecha_fin_estimada) < fechaHoy) totalVencido += c.saldo_restante;
+    });
+
+    setFinanzas({
+      dineroCalle: totalCalle,
+      cobradoHoy: pagos?.reduce((sum, p) => sum + p.monto, 0) || 0,
+      clientesActivos: creditos?.length || 0,
+      carteraVencida: totalVencido
+    });
+  }
+
+  async function cargarDatosOperativos() {
+    const { data: rutasData } = await supabase.from('rutas').select(`*, usuarios (nombre_completo)`).eq('empresa_id', usuario.empresa_id).order('id', { ascending: true });
+    const { data: cobradoresData } = await supabase.from('usuarios').select('*').eq('empresa_id', usuario.empresa_id).eq('rol', 'COBRADOR').order('nombre_completo', { ascending: true });
+    if (rutasData) setRutas(rutasData);
+    if (cobradoresData) setCobradores(cobradoresData);
+  }
+
+  // --- LÓGICA AUDITORÍA ---
+  async function buscarHistorial(e) {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      const { data: clientes } = await supabase.from('clientes').select('*').eq('empresa_id', usuario.empresa_id).or(`dni.eq.${busquedaCliente},nombre_completo.ilike.%${busquedaCliente}%`).limit(1);
+      if (clientes && clientes.length > 0) {
+        const cliente = clientes[0];
+        setClienteEncontrado(cliente);
+        const { data: creditos } = await supabase.from('creditos').select('*').eq('cliente_id', cliente.id).order('created_at', { ascending: false });
+        setHistorialCreditos(creditos || []);
+        calcularScore(creditos || []);
+      } else { alert("Cliente no encontrado."); }
+    } catch (error) { console.error(error); } finally { setLoading(false); }
+  }
+
+  const calcularScore = (creditos) => {
+    if (creditos.length === 0) return setScore('NEUTRO');
+    let malos = 0;
+    creditos.forEach(c => {
+        const finEstimado = new Date(c.fecha_fin_estimada);
+        const ultimoPago = c.fecha_ultimo_pago ? new Date(c.fecha_ultimo_pago) : new Date();
+        if (ultimoPago > finEstimado || (c.estado === 'ACTIVO' && new Date() > finEstimado)) malos++;
+    });
+    if (malos === 0) setScore('VERDE'); else if (malos <= 2) setScore('AMARILLO'); else setScore('ROJO');
   };
 
-  const cancelarEliminacion = () => {
-    setItemEliminar(null);
-    setPassConfirmacion('');
-  };
-
+  // --- LÓGICA OPERATIVA ---
   const confirmarEliminacion = async (e) => {
     e.preventDefault();
-    if (!passConfirmacion) return alert("Ingresa tu contraseña para confirmar.");
-    
+    if (!passConfirmacion) return alert("Ingresa contraseña.");
     setLoadingSecurity(true);
     try {
-      // VERIFICAR CONTRASEÑA DEL ADMIN
-      const { data: adminValido } = await supabase
-        .from('usuarios')
-        .select('id')
-        .eq('id', usuario.id)
-        .eq('password_hash', passConfirmacion)
-        .single();
+      const { data: adminValido } = await supabase.from('usuarios').select('id').eq('id', usuario.id).eq('password_hash', passConfirmacion).single();
+      if (!adminValido) throw new Error("⛔ Contraseña incorrecta.");
 
-      if (!adminValido) throw new Error("⛔ Contraseña incorrecta. Permiso denegado.");
-
-      // BORRAR
       if (itemEliminar.tipo === 'ruta') {
-        const { error } = await supabase.from('rutas').delete().eq('id', itemEliminar.data.id);
-        if (error) throw error;
+        await supabase.from('rutas').delete().eq('id', itemEliminar.data.id);
         setRutas(rutas.filter(r => r.id !== itemEliminar.data.id));
-        alert("✅ Ruta eliminada.");
-      } 
-      else if (itemEliminar.tipo === 'cobrador') {
-        const { error } = await supabase.from('usuarios').delete().eq('id', itemEliminar.data.id);
-        if (error) throw error;
+      } else {
+        await supabase.from('usuarios').delete().eq('id', itemEliminar.data.id);
         setCobradores(cobradores.filter(c => c.id !== itemEliminar.data.id));
-        alert("✅ Usuario eliminado correctamente.");
       }
-      cancelarEliminacion();
-    } catch (error) {
-      alert(error.message);
-    } finally {
-      setLoadingSecurity(false);
-    }
+      setItemEliminar(null); setPassConfirmacion('');
+      alert("✅ Eliminado correctamente.");
+    } catch (error) { alert(error.message); } finally { setLoadingSecurity(false); }
   };
 
-  // --- LÓGICA RUTAS Y COBRADORES (Crear/Editar) ---
   async function crearRuta(e) {
     e.preventDefault();
-    if (!nuevaRuta.trim()) return alert("Falta el nombre de la ruta.");
-    setLoading(true);
-    const { data, error } = await supabase.from('rutas').insert([{ empresa_id: usuario.empresa_id, nombre: nuevaRuta.toUpperCase(), estado: true }]).select().single();
-    setLoading(false);
-    if (!error) {
-      setNuevaRuta('');
-      setRutas([...rutas, { ...data, usuarios: null }]);
-    }
-  }
-
-  const iniciarEdicionRuta = (ruta) => { setRutaEditando(ruta.id); setNombreEditado(ruta.nombre); };
-  
-  async function guardarNombreRuta(id) {
-    if (!nombreEditado.trim()) return;
-    const { error } = await supabase.from('rutas').update({ nombre: nombreEditado.toUpperCase() }).eq('id', id);
-    if (!error) {
-      setRutas(rutas.map(r => r.id === id ? { ...r, nombre: nombreEditado.toUpperCase() } : r));
-      setRutaEditando(null);
-    }
-  }
-
-  async function asignarCobrador(rutaId, usuarioId) {
-    setRutas(rutas.map(r => r.id === rutaId ? { ...r, usuario_cobrador_id: usuarioId } : r));
-    await supabase.from('rutas').update({ usuario_cobrador_id: usuarioId ? usuarioId : null }).eq('id', rutaId);
-  }
-
-  async function toggleBloqueoRuta(ruta) {
-    const nuevoEstado = !ruta.estado;
-    setRutas(rutas.map(r => r.id === ruta.id ? { ...r, estado: nuevoEstado } : r));
-    await supabase.from('rutas').update({ estado: nuevoEstado }).eq('id', ruta.id);
+    if (!nuevaRuta.trim()) return;
+    const { data } = await supabase.from('rutas').insert([{ empresa_id: usuario.empresa_id, nombre: nuevaRuta.toUpperCase(), estado: true }]).select().single();
+    if (data) { setRutas([...rutas, { ...data, usuarios: null }]); setNuevaRuta(''); }
   }
 
   async function crearCobrador(e) {
     e.preventDefault();
-    if (nuevoCobrador.pass.length < 4) return alert("Contraseña muy corta.");
-    setLoading(true);
-    try {
-      const { data: existe } = await supabase.from('usuarios').select('id').eq('username', nuevoCobrador.user).single();
-      if (existe) throw new Error("⛔ Usuario ya existe.");
-
-      const { data, error } = await supabase.from('usuarios').insert([{
-        empresa_id: usuario.empresa_id,
-        nombre_completo: nuevoCobrador.nombre.toUpperCase(),
-        username: nuevoCobrador.user,
-        password_hash: nuevoCobrador.pass,
-        rol: 'COBRADOR',
-        estado: true
-      }]).select().single();
-
-      if (error) throw error;
-      setNuevoCobrador({ nombre: '', user: '', pass: '' });
-      setCobradores([...cobradores, data]);
-      alert("✅ Cobrador creado.");
-    } catch (error) { alert(error.message); } finally { setLoading(false); }
+    if (nuevoCobrador.pass.length < 4) return alert("Clave muy corta");
+    const { data: existe } = await supabase.from('usuarios').select('id').eq('username', nuevoCobrador.user).single();
+    if (existe) return alert("Usuario ya existe");
+    const { data } = await supabase.from('usuarios').insert([{ empresa_id: usuario.empresa_id, nombre_completo: nuevoCobrador.nombre.toUpperCase(), username: nuevoCobrador.user, password_hash: nuevoCobrador.pass, rol: 'COBRADOR', estado: true }]).select().single();
+    if (data) { setCobradores([...cobradores, data]); setNuevoCobrador({ nombre: '', user: '', pass: '' }); alert("Cobrador creado"); }
   }
+
+  async function asignarCobrador(rutaId, userId) {
+    setRutas(rutas.map(r => r.id === rutaId ? { ...r, usuario_cobrador_id: userId } : r));
+    await supabase.from('rutas').update({ usuario_cobrador_id: userId || null }).eq('id', rutaId);
+  }
+  async function guardarNombreRuta(id) {
+    if(!nombreEditado.trim()) return;
+    await supabase.from('rutas').update({ nombre: nombreEditado.toUpperCase() }).eq('id', id);
+    setRutas(rutas.map(r => r.id === id ? { ...r, nombre: nombreEditado.toUpperCase() } : r));
+    setRutaEditando(null);
+  }
+
+  // AUXILIAR TIEMPO
+  const calcularHaceCuanto = (fechaIso) => {
+    if (!fechaIso) return 'Nunca';
+    const diferencia = new Date() - new Date(fechaIso);
+    const minutos = Math.floor(diferencia / 60000);
+    if (minutos < 1) return 'Ahora mismo';
+    if (minutos < 60) return `Hace ${minutos} min`;
+    return `Hace ${Math.floor(minutos/60)} horas`;
+  };
 
   return (
     <div style={{ padding: '10px', maxWidth: '1200px', margin: '0 auto' }}>
       
       {/* HEADER */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
+      <div style={{ marginBottom: '20px', borderBottom: '2px solid #e5e7eb', paddingBottom: '15px' }}>
         <h2 style={{ color: '#111827', margin: 0, display:'flex', alignItems:'center', gap:'10px' }}>
-             <Activity color="#7c3aed"/> Panel Gerencial
+             <Activity color="#7c3aed" size={28}/> Centro de Control
         </h2>
-        <div style={{ display: 'flex', gap: '5px', backgroundColor:'white', padding:'5px', borderRadius:'8px', border:'1px solid #e5e7eb' }}>
-          <button onClick={() => setVista('dashboard')} style={vista === 'dashboard' ? btnActivo : btnInactivo}>🛣️ Rutas</button>
-          <button onClick={() => setVista('personal')} style={vista === 'personal' ? btnActivo : btnInactivo}>👷 Personal</button>
-          <button onClick={() => setVista('mapa')} style={vista === 'mapa' ? btnActivo : btnInactivo}>📍 GPS</button>
-        </div>
       </div>
 
-      {/* VISTA 1: RUTAS */}
-      {vista === 'dashboard' && (
-        <div>
-          <div style={{ backgroundColor: 'white', padding: '15px', borderRadius: '12px', marginBottom: '20px', display:'flex', gap:'10px', alignItems:'center', border:'1px solid #e5e7eb' }}>
-            <input placeholder="Nombre Nueva Ruta" value={nuevaRuta} onChange={e => setNuevaRuta(e.target.value)} style={inputStyle} />
-            <button onClick={crearRuta} disabled={loading} style={btnVerde}>{loading ? '...' : <><Plus size={18}/> Crear</>}</button>
-          </div>
+      {/* MENÚ PESTAÑAS */}
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '20px', overflowX:'auto' }}>
+        <button onClick={() => setVista('mapa')} style={vista === 'mapa' ? btnActivo : btnInactivo}>📍 GPS en Vivo</button>
+        <button onClick={() => setVista('auditoria')} style={vista === 'auditoria' ? btnActivo : btnInactivo}>🔎 Auditoría</button>
+        <button onClick={() => setVista('finanzas')} style={vista === 'finanzas' ? btnActivo : btnInactivo}>📊 Finanzas</button>
+        <button onClick={() => setVista('operativo')} style={vista === 'operativo' ? btnActivo : btnInactivo}>⚙️ Gestión</button>
+      </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '15px' }}>
-            {rutas.map(ruta => (
-              <div key={ruta.id} style={{ backgroundColor: 'white', padding: '15px', borderRadius: '10px', borderLeft: ruta.estado ? '5px solid #10b981' : '5px solid #ef4444', boxShadow: '0 2px 4px rgba(0,0,0,0.05)' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '10px', alignItems: 'center' }}>
-                  {rutaEditando === ruta.id ? (
-                    <div style={{display:'flex', gap:'5px', flex:1, marginRight:'10px'}}>
-                      <input value={nombreEditado} onChange={e => setNombreEditado(e.target.value)} style={{...inputStyle, padding:'5px'}} autoFocus />
-                      <button onClick={() => guardarNombreRuta(ruta.id)} style={{...btnVerde, padding:'5px'}}><Save size={16}/></button>
-                    </div>
-                  ) : (
-                    <div style={{display:'flex', alignItems:'center', gap:'8px'}}>
-                      <h3 style={{ margin: 0, color: '#374151', fontSize:'16px' }}>{ruta.nombre}</h3>
-                      <button onClick={() => iniciarEdicionRuta(ruta)} style={{background:'none', border:'none', cursor:'pointer', color:'#9ca3af'}} title="Editar Nombre"><Edit3 size={14}/></button>
-                    </div>
-                  )}
-
-                  <div style={{display:'flex', gap:'8px'}}>
-                    <button onClick={() => toggleBloqueoRuta(ruta)} style={btnIcono} title={ruta.estado ? "Bloquear" : "Desbloquear"}>{ruta.estado ? <Unlock size={18} color="#10b981"/> : <Lock size={18} color="#ef4444"/>}</button>
-                    {/* BOTÓN ELIMINAR RUTA */}
-                    <button onClick={() => solicitarEliminacion('ruta', ruta)} style={{...btnIcono, backgroundColor: '#fee2e2', borderRadius: '4px'}}>
-                        <Trash2 size={18} color="#dc2626"/>
-                    </button>
-                  </div>
-                </div>
-                
-                <div style={{ marginBottom: '10px' }}>
-                  <label style={{ fontSize: '11px', color: '#6b7280', display: 'block', marginBottom: '4px', fontWeight:'bold' }}>COBRADOR:</label>
-                  <select value={ruta.usuario_cobrador_id || ''} onChange={(e) => asignarCobrador(ruta.id, e.target.value)} style={{ width: '100%', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db' }}>
-                    <option value="">-- Sin Asignar --</option>
-                    {cobradores.map(cob => (<option key={cob.id} value={cob.id}>{cob.nombre_completo}</option>))}
-                  </select>
-                </div>
-                {!ruta.estado && <div style={{fontSize:'12px', color:'red', textAlign:'center', fontWeight:'bold'}}>🚫 BLOQUEADA</div>}
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* VISTA 2: PERSONAL (AQUÍ ESTÁ EL BOTÓN QUE PEDISTE) */}
-      {vista === 'personal' && (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
-          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', height: 'fit-content', border:'1px solid #e5e7eb' }}>
-            <h3 style={{ marginTop: 0, display: 'flex', alignItems: 'center', gap: '10px', fontSize:'16px' }}><UserPlus size={20} color="#2563eb"/> Nuevo Cobrador</h3>
-            <form onSubmit={crearCobrador} style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              <input required placeholder="Nombre Completo" value={nuevoCobrador.nombre} onChange={e => setNuevoCobrador({...nuevoCobrador, nombre: e.target.value})} style={inputStyle} />
-              <input required placeholder="Usuario (Login)" value={nuevoCobrador.user} onChange={e => setNuevoCobrador({...nuevoCobrador, user: e.target.value})} style={inputStyle} />
-              <input required placeholder="Contraseña" value={nuevoCobrador.pass} onChange={e => setNuevoCobrador({...nuevoCobrador, pass: e.target.value})} style={inputStyle} />
-              <button type="submit" disabled={loading} style={btnActivo}>{loading ? 'Guardando...' : 'Crear Empleado'}</button>
-            </form>
-          </div>
-          
-          <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border:'1px solid #e5e7eb' }}>
-            <h3 style={{ marginTop: 0, fontSize:'16px' }}>📋 Plantilla</h3>
-            <ul style={{ listStyle: 'none', padding: 0 }}>
-              {cobradores.map(cob => (
-                <li key={cob.id} style={{ padding: '15px 0', borderBottom: '1px solid #eee', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
-                    <div style={{ fontWeight: 'bold', color:'#374151', fontSize:'15px' }}>{cob.nombre_completo}</div>
-                    <div style={{ fontSize: '13px', color: '#6b7280', marginTop:'2px' }}>
-                        Usuario: <strong style={{color:'#374151'}}>{cob.username}</strong>
-                    </div>
-                  </div>
-                  
-                  {/* BOTÓN ELIMINAR GRANDE Y CLARO */}
-                  <button 
-                    onClick={() => solicitarEliminacion('cobrador', cob)} 
-                    style={{
-                        backgroundColor: '#fee2e2', 
-                        color: '#b91c1c', 
-                        border: '1px solid #fecaca', 
-                        padding: '8px 12px', 
-                        borderRadius: '6px', 
-                        cursor: 'pointer', 
-                        fontWeight: 'bold',
-                        display: 'flex', 
-                        alignItems: 'center', 
-                        gap: '6px',
-                        fontSize: '12px'
-                    }}
-                  >
-                    <Trash2 size={16}/> ELIMINAR
-                  </button>
-                </li>
-              ))}
-              {cobradores.length === 0 && <li style={{color:'#888'}}>No hay cobradores.</li>}
-            </ul>
-          </div>
-        </div>
-      )}
-
-      {/* VISTA 3: MAPA */}
+      {/* --- VISTA 0: MAPA GPS (CORREGIDO) --- */}
       {vista === 'mapa' && (
-         <div style={{backgroundColor:'white', padding:'20px', borderRadius:'12px', border:'1px solid #e5e7eb', textAlign:'center', color:'#666'}}>
-             <MapPin size={48} color="#2563eb" />
-             <p>Mapa GPS activo.</p>
-             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px', marginTop:'20px' }}>
-                {cobradores.map(cob => (
-                    <div key={cob.id} style={{ border: '1px solid #eee', padding: '10px', borderRadius: '8px', textAlign:'left' }}>
-                        <strong>{cob.nombre_completo}</strong><br/>
-                        <span style={{fontSize:'12px'}}>{cob.last_lat ? '🟢 GPS Activo' : '⚪ Sin señal'}</span>
-                        {cob.last_lat && (
-                            <a href={`http://googleusercontent.com/maps.google.com/search/?api=1&query=${cob.last_lat},${cob.last_lon}`} target="_blank" style={{display:'block', marginTop:'5px', color:'#2563eb', fontSize:'12px', fontWeight:'bold'}}>Ver en Mapa</a>
-                        )}
-                    </div>
-                ))}
+         <div style={{backgroundColor:'white', padding:'20px', borderRadius:'12px', border:'1px solid #d1d5db'}}>
+             <div style={{display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'15px'}}>
+               <div style={{display:'flex', alignItems:'center', gap:'10px'}}>
+                  <MapPin size={24} color="#2563eb" />
+                  <div>
+                    <h3 style={{margin:0, color:'#111827'}}>Rastreo Satelital</h3>
+                    <span style={{fontSize:'12px', color:'#666'}}>Actualizado: {lastUpdate.toLocaleTimeString()}</span>
+                  </div>
+               </div>
+               <button onClick={cargarTodo} style={{border:'none', background:'none', cursor:'pointer'}} title="Actualizar"><RefreshCw size={20}/></button>
              </div>
+             
+             {cobradores.length === 0 ? <p>No hay cobradores registrados.</p> : (
+                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '15px' }}>
+                    {cobradores.map(cob => (
+                        <div key={cob.id} style={{ border: '1px solid #eee', padding: '15px', borderRadius: '12px', textAlign:'left', borderLeft: cob.last_lat ? '4px solid #16a34a' : '4px solid #9ca3af', backgroundColor: cob.last_lat ? '#f0fdf4' : '#f9fafb' }}>
+                            <div style={{fontWeight:'bold', color:'#111827', fontSize:'16px'}}>{cob.nombre_completo}</div>
+                            <div style={{fontSize:'13px', color:'#4b5563', margin:'5px 0'}}>
+                               {cob.last_lat ? `📍 Reportó: ${calcularHaceCuanto(cob.last_seen)}` : '⚪ Sin señal reciente'}
+                            </div>
+                            
+                            {/* ENLACE CORREGIDO PARA QUE NO DE ERROR 404 */}
+                            {cob.last_lat ? (
+                                <a 
+                                  href={`https://www.google.com/maps/search/?api=1&query=${cob.last_lat},${cob.last_lon}`} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  style={{display:'block', marginTop:'10px', backgroundColor:'#2563eb', color:'white', textAlign:'center', padding:'8px', borderRadius:'6px', textDecoration:'none', fontWeight:'bold', fontSize:'14px'}}
+                                >
+                                  VER EN MAPA 🗺️
+                                </a>
+                            ) : <div style={{fontSize:'12px', color:'#9ca3af', fontStyle:'italic', marginTop:'10px'}}>Esperando conexión...</div>}
+                        </div>
+                    ))}
+                 </div>
+             )}
          </div>
       )}
 
-      {/* --- MODAL DE SEGURIDAD --- */}
-      {itemEliminar && (
-        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 1000 }}>
-          <div style={{ backgroundColor: 'white', padding: '25px', borderRadius: '12px', width: '90%', maxWidth: '400px', boxShadow: '0 10px 25px rgba(0,0,0,0.2)' }}>
-            <div style={{ textAlign: 'center', marginBottom: '15px' }}>
-              <div style={{backgroundColor:'#fee2e2', width:'50px', height:'50px', borderRadius:'50%', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 10px auto'}}>
-                <AlertTriangle color="#dc2626" size={24} />
-              </div>
-              <h3 style={{ margin: 0, color: '#111827' }}>Confirmar Eliminación</h3>
-              <p style={{ color: '#6b7280', fontSize: '14px', marginTop: '5px' }}>
-                Vas a eliminar a <strong>{itemEliminar.data.nombre || itemEliminar.data.nombre_completo}</strong>.<br/>
-                Para confirmar, ingresa tu contraseña de Administrador.
-              </p>
-            </div>
-            <form onSubmit={confirmarEliminacion}>
-              <input 
-                type="password" autoFocus placeholder="Tu contraseña..."
-                value={passConfirmacion} onChange={e => setPassConfirmacion(e.target.value)}
-                style={{ width: '100%', padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', marginBottom: '20px', fontSize:'16px' }}
-              />
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <button type="button" onClick={cancelarEliminacion} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db', backgroundColor: 'white', cursor: 'pointer', fontWeight:'bold' }}>Cancelar</button>
-                <button type="submit" disabled={loadingSecurity} style={{ flex: 1, padding: '10px', borderRadius: '6px', border: 'none', backgroundColor: '#dc2626', color: 'white', cursor: 'pointer', fontWeight:'bold' }}>{loadingSecurity ? '...' : 'ELIMINAR'}</button>
-              </div>
-            </form>
-          </div>
+      {/* VISTA 1: AUDITORÍA */}
+      {vista === 'auditoria' && (
+        <div>
+           <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', border:'1px solid #d1d5db', marginBottom:'20px' }}>
+              <form onSubmit={buscarHistorial} style={{display:'flex', gap:'10px'}}>
+                  <input placeholder="DNI o Nombre..." value={busquedaCliente} onChange={e => setBusquedaCliente(e.target.value)} style={inputStyle} />
+                  <button type="submit" disabled={loading} style={btnVerde}><Search size={18} /></button>
+              </form>
+           </div>
+           {clienteEncontrado && (
+             <div>
+                <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '12px', borderLeft: `8px solid ${score === 'VERDE' ? '#16a34a' : score === 'AMARILLO' ? '#eab308' : '#dc2626'}`, marginBottom: '20px' }}>
+                    <h2 style={{margin:0}}>{clienteEncontrado.nombre_completo}</h2>
+                    <div style={{color:'#6b7280'}}>Récord: <strong>{score}</strong></div>
+                </div>
+                <table style={{width:'100%', borderCollapse:'collapse', backgroundColor:'white'}}>
+                    <thead><tr style={{textAlign:'left'}}><th>Fecha</th><th>Monto</th><th>Estado</th></tr></thead>
+                    <tbody>
+                        {historialCreditos.map(c => (
+                            <tr key={c.id} style={{borderTop:'1px solid #eee'}}>
+                                <td style={{padding:'10px'}}>{new Date(c.created_at).toLocaleDateString()}</td>
+                                <td>S/ {c.total_a_pagar}</td>
+                                <td>{c.estado}</td>
+                            </tr>
+                        ))}
+                    </tbody>
+                </table>
+             </div>
+           )}
         </div>
       )}
+
+      {/* VISTA 2: FINANZAS */}
+      {vista === 'finanzas' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '15px' }}>
+            <div style={{ backgroundColor: '#1e3a8a', color: 'white', padding: '20px', borderRadius: '12px' }}>
+                <div style={{opacity:0.8, fontSize:'12px'}}>CAPITAL EN CALLE</div>
+                <div style={{fontSize:'32px', fontWeight:'bold'}}>S/ {finanzas.dineroCalle}</div>
+            </div>
+            <div style={{ backgroundColor: '#065f46', color: 'white', padding: '20px', borderRadius: '12px' }}>
+                <div style={{opacity:0.8, fontSize:'12px'}}>COBRADO HOY</div>
+                <div style={{fontSize:'32px', fontWeight:'bold'}}>S/ {finanzas.cobradoHoy}</div>
+            </div>
+            <div style={{ backgroundColor: '#7f1d1d', color: 'white', padding: '20px', borderRadius: '12px' }}>
+                <div style={{opacity:0.8, fontSize:'12px'}}>CARTERA VENCIDA</div>
+                <div style={{fontSize:'32px', fontWeight:'bold'}}>S/ {finanzas.carteraVencida}</div>
+            </div>
+        </div>
+      )}
+
+      {/* VISTA 3: OPERATIVO */}
+      {vista === 'operativo' && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+            <div>
+                <h3 style={{color:'#374151'}}>Rutas</h3>
+                <div style={{display:'flex', gap:'5px', marginBottom:'10px'}}>
+                    <input placeholder="Nueva Ruta" value={nuevaRuta} onChange={e => setNuevaRuta(e.target.value)} style={inputStyle} />
+                    <button onClick={crearRuta} style={btnVerde}><Plus/></button>
+                </div>
+                {rutas.map(r => (
+                    <div key={r.id} style={{backgroundColor:'white', padding:'10px', marginBottom:'10px', borderRadius:'8px', border:'1px solid #ddd'}}>
+                        <div style={{display:'flex', justifyContent:'space-between'}}>
+                            {rutaEditando === r.id ? 
+                                <><input value={nombreEditado} onChange={e => setNombreEditado(e.target.value)} style={inputStyle}/><button onClick={() => guardarNombreRuta(r.id)}><Save size={16}/></button></> :
+                                <strong>{r.nombre}</strong>
+                            }
+                            <div style={{display:'flex', gap:'5px'}}>
+                                <button onClick={() => {setRutaEditando(r.id); setNombreEditado(r.nombre)}} style={{border:'none', background:'none'}}><Edit3 size={16}/></button>
+                                <button onClick={() => {setItemEliminar({tipo:'ruta', data:r}); setPassConfirmacion('')}} style={{border:'none', background:'none', color:'red'}}><Trash2 size={16}/></button>
+                            </div>
+                        </div>
+                        <select style={{width:'100%', marginTop:'5px'}} value={r.usuario_cobrador_id || ''} onChange={e => asignarCobrador(r.id, e.target.value)}>
+                            <option value="">-- Asignar Cobrador --</option>
+                            {cobradores.map(c => <option key={c.id} value={c.id}>{c.nombre_completo}</option>)}
+                        </select>
+                    </div>
+                ))}
+            </div>
+
+            <div>
+                <h3 style={{color:'#374151'}}>Personal</h3>
+                <div style={{backgroundColor:'white', padding:'15px', borderRadius:'8px', border:'1px solid #ddd', marginBottom:'15px'}}>
+                    <input placeholder="Nombre" value={nuevoCobrador.nombre} onChange={e => setNuevoCobrador({...nuevoCobrador, nombre: e.target.value})} style={{...inputStyle, marginBottom:'5px', width:'100%'}} />
+                    <input placeholder="Usuario" value={nuevoCobrador.user} onChange={e => setNuevoCobrador({...nuevoCobrador, user: e.target.value})} style={{...inputStyle, marginBottom:'5px', width:'100%'}} />
+                    <input placeholder="Clave" value={nuevoCobrador.pass} onChange={e => setNuevoCobrador({...nuevoCobrador, pass: e.target.value})} style={{...inputStyle, marginBottom:'5px', width:'100%'}} />
+                    <button onClick={crearCobrador} style={{...btnVerde, width:'100%'}}>Crear Cobrador</button>
+                </div>
+                {cobradores.map(c => (
+                    <div key={c.id} style={{backgroundColor:'white', padding:'10px', marginBottom:'5px', borderRadius:'8px', border:'1px solid #ddd', display:'flex', justifyContent:'space-between'}}>
+                        <div>{c.nombre_completo} <br/><small style={{color:'#666'}}>{c.username}</small></div>
+                        <button onClick={() => {setItemEliminar({tipo:'cobrador', data:c}); setPassConfirmacion('')}} style={{color:'red', border:'none', background:'none'}}><Trash2 size={16}/></button>
+                    </div>
+                ))}
+            </div>
+        </div>
+      )}
+
+      {/* MODAL ELIMINAR */}
+      {itemEliminar && (
+        <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.5)', display:'flex', justifyContent:'center', alignItems:'center'}}>
+            <div style={{backgroundColor:'white', padding:'20px', borderRadius:'10px', width:'300px', textAlign:'center'}}>
+                <h3>Confirmar con Clave</h3>
+                <input type="password" value={passConfirmacion} onChange={e => setPassConfirmacion(e.target.value)} style={{...inputStyle, width:'100%', marginBottom:'10px'}} autoFocus />
+                <div style={{display:'flex', gap:'10px'}}>
+                    <button onClick={() => setItemEliminar(null)} style={{flex:1, padding:'10px'}}>Cancelar</button>
+                    <button onClick={confirmarEliminacion} style={{flex:1, padding:'10px', background:'red', color:'white', border:'none'}}>Eliminar</button>
+                </div>
+            </div>
+        </div>
+      )}
+
     </div>
   );
 }
 
-const btnActivo = { backgroundColor: '#111827', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', fontSize:'13px' };
-const btnInactivo = { backgroundColor: 'white', color: '#374151', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontSize:'13px' };
-const btnVerde = { backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '0 15px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: '5px' };
-const btnIcono = { background: 'none', border: 'none', cursor: 'pointer', padding:'5px' };
-const inputStyle = { flex: 1, padding: '10px', borderRadius: '6px', border: '1px solid #d1d5db' };
+const btnActivo = { backgroundColor: '#111827', color: 'white', border: 'none', padding: '10px 15px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' };
+const btnInactivo = { backgroundColor: 'white', color: '#374151', border: '1px solid #d1d5db', padding: '10px 15px', borderRadius: '6px', cursor: 'pointer' };
+const btnVerde = { backgroundColor: '#16a34a', color: 'white', border: 'none', padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' };
+const inputStyle = { padding: '8px', borderRadius: '4px', border: '1px solid #ccc' };

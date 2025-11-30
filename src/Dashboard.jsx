@@ -3,12 +3,14 @@ import { useAuth } from './AuthContext';
 import { Clientes } from './Clientes';
 import { Creditos } from './Creditos';
 import { Caja } from './Caja';
-import { ListadoGeneral } from './ListadoGeneral';
-import { AdminPanel } from './AdminPanel'; // Asegúrate de que este archivo exista en src/
+import { AdminPanel } from './AdminPanel';
 import { Perfil } from './Perfil';
 import { SuperAdmin } from './SuperAdmin';
 import { Capital } from './Capital';
-import { LogOut, Users, Banknote, Wallet, LayoutGrid, Table, UserCircle, Shield, TrendingUp, Map } from 'lucide-react';
+import { Cobranza } from './Cobranza';
+import { Liquidacion } from './Liquidacion';
+import { Enrutador } from './Enrutador';
+import { LogOut, Users, Banknote, Wallet, LayoutGrid, Table, UserCircle, Shield, TrendingUp, Map, Calculator, Navigation } from 'lucide-react';
 
 function BotonMenu({ icon, titulo, desc, onClick, esAdmin, resaltado }) {
     const btnEstilo = {
@@ -37,10 +39,11 @@ function BotonMenu({ icon, titulo, desc, onClick, esAdmin, resaltado }) {
 export function Dashboard() {
     const { 
         usuario, rol, esSuperAdmin, esAdmin, 
-        pantallaActual, setPantallaActual, cerrarSesion
+        pantallaActual, setPantallaActual, cerrarSesion,
+        clientePreseleccionado 
     } = useAuth();
     
-    // 3. VISTA SUPER ADMIN
+    // --- VISTA SUPER ADMIN ---
     if (rol === 'SUPER_ADMIN') {
         return (
             <div>
@@ -91,26 +94,52 @@ export function Dashboard() {
 
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '20px' }}>
                             
-                            {/* --- BOTÓN GERENCIAL (Solo Admin) --- */}
+                            {/* --- BOTONES DEL JEFE (ADMIN) --- */}
                             {esAdmin ? (
-                                <BotonMenu 
-                                    icon={<Map size={32} color="#7c3aed"/>} 
-                                    titulo="Panel Gerencial" 
-                                    desc="Rutas, GPS y Control" 
-                                    onClick={() => setPantallaActual('admin-panel')}
-                                    resaltado={true} 
-                                    esAdmin={true}
-                                />
+                                <>
+                                    <BotonMenu 
+                                        icon={<Map size={32} color="#7c3aed"/>} 
+                                        titulo="Panel Gerencial" 
+                                        desc="Rutas, GPS y Control" 
+                                        onClick={() => setPantallaActual('admin-panel')}
+                                        resaltado={true} 
+                                        esAdmin={true}
+                                    />
+                                    <BotonMenu 
+                                        icon={<Calculator size={32} color="#dc2626"/>} 
+                                        titulo="Corte / Liquidación" 
+                                        desc="Auditar Cobradores" 
+                                        onClick={() => setPantallaActual('liquidacion')}
+                                        esAdmin={true}
+                                    />
+                                    <BotonMenu 
+                                        icon={<Navigation size={32} color="#f59e0b"/>} 
+                                        titulo="Enrutador GPS" 
+                                        desc="Optimizar Recorrido (IA)" 
+                                        onClick={() => setPantallaActual('enrutador')}
+                                        esAdmin={true}
+                                    />
+                                </>
                             ) : (
-                                // El cobrador sigue viendo el listado simple
-                                <BotonMenu 
-                                    icon={<Table size={32} color="#000080"/>} 
-                                    titulo="Mi Ruta" 
-                                    desc="Listado de Clientes" 
-                                    onClick={() => setPantallaActual('listado')}
-                                />
+                                // --- BOTONES DEL COBRADOR ---
+                                <>
+                                    <BotonMenu 
+                                        icon={<Table size={32} color="#000080"/>} 
+                                        titulo="Mi Ruta" 
+                                        desc="Ruta de Cobro GPS" 
+                                        onClick={() => setPantallaActual('listado')}
+                                    />
+                                    {/* AGREGADO: Enrutador para Cobradores */}
+                                    <BotonMenu 
+                                        icon={<Navigation size={32} color="#f59e0b"/>} 
+                                        titulo="Enrutador GPS" 
+                                        desc="Organizar mi Ruta" 
+                                        onClick={() => setPantallaActual('enrutador')}
+                                    />
+                                </>
                             )}
                             
+                            {/* BOTONES COMUNES */}
                             <BotonMenu 
                                 icon={<Banknote size={32} color="#16a34a"/>} 
                                 titulo="Vender" 
@@ -132,6 +161,7 @@ export function Dashboard() {
                                 onClick={() => setPantallaActual('caja')} 
                             />
 
+                            {/* BOTÓN CAPITAL (Solo Admin) */}
                             {esAdmin && (
                                 <BotonMenu 
                                     icon={<TrendingUp size={32} color="#065f46"/>} 
@@ -148,12 +178,26 @@ export function Dashboard() {
 
                 {/* --- RENDERIZADO DE PANTALLAS --- */}
                 {pantallaActual === 'admin-panel' && esAdmin && <AdminPanel />}
-                {pantallaActual === 'clientes' && <Clientes />}
-                {pantallaActual === 'creditos' && <Creditos />}
-                {pantallaActual === 'caja' && <Caja />}
-                {pantallaActual === 'listado' && <ListadoGeneral />}
-                {pantallaActual === 'perfil' && <Perfil />}
-                {pantallaActual === 'capital' && esAdmin && <Capital />}
+                {pantallaActual === 'clientes' && <Clientes usuario={usuario} />}
+                
+                {/* Atajo de creación */}
+                {pantallaActual === 'crear-cliente' && (
+                    <Clientes 
+                        usuario={usuario} 
+                        vistaInicial="formulario" 
+                        alTerminar={(idNuevo) => setPantallaActual('creditos')}
+                    />
+                )}
+                
+                {pantallaActual === 'creditos' && <Creditos usuario={usuario} clienteInicial={clientePreseleccionado} cambiarPantalla={setPantallaActual} />}
+                {pantallaActual === 'caja' && <Caja usuario={usuario} />}
+                {pantallaActual === 'listado' && <Cobranza />}
+                {pantallaActual === 'perfil' && <Perfil usuario={usuario} />}
+                {pantallaActual === 'capital' && esAdmin && <Capital usuario={usuario} />}
+                {pantallaActual === 'liquidacion' && esAdmin && <Liquidacion />}
+
+                {/* ENRUTADOR: Ahora visible para TODOS (Quitamos el '&& esAdmin') */}
+                {pantallaActual === 'enrutador' && <Enrutador />}
 
             </div>
         </div>
