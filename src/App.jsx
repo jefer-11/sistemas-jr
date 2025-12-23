@@ -15,12 +15,11 @@ import { Cobranza } from './Cobranza';
 import { Liquidacion } from './Liquidacion';
 import { Enrutador } from './Enrutador';
 import { Consultas } from './Consultas';
-import { SuperAdmin } from './SuperAdmin';
 
 // Componente para proteger rutas privadas
 function RutaPrivada({ children }) {
   const { usuario, cargandoSesion } = useAuth();
-  if (cargandoSesion) return <div>Cargando...</div>;
+  if (cargandoSesion) return <div style={{display:'flex', justifyContent:'center', marginTop:'50px'}}>Cargando...</div>;
   return usuario ? children : <Navigate to="/login" />;
 }
 
@@ -29,9 +28,10 @@ function AppRoutes() {
 
   return (
     <Routes>
+      {/* Si no hay usuario, vamos al Login. Si ya hay, Login nos manda al Dashboard */}
       <Route path="/login" element={!usuario ? <Login /> : <Navigate to="/" />} />
       
-      {/* Rutas Protegidas dentro del Layout */}
+      {/* Rutas Protegidas dentro del Layout (Menú Lateral) */}
       <Route element={<RutaPrivada><Layout /></RutaPrivada>}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/clientes" element={<Clientes />} />
@@ -40,15 +40,13 @@ function AppRoutes() {
         <Route path="/admin" element={<AdminPanel />} />
         <Route path="/perfil" element={<Perfil />} />
         <Route path="/capital" element={<Capital />} />
-        <Route path="/ruta-cobro" element={<Cobranza />} />
+        <Route path="/rutas-cobro" element={<Cobranza />} /> {/* Corregí ruta a plural para coincidir con Layout */}
         <Route path="/liquidacion" element={<Liquidacion />} />
         <Route path="/enrutador" element={<Enrutador />} />
         <Route path="/consultas" element={<Consultas />} />
       </Route>
 
-      {/* Ruta especial Super Admin fuera del Layout normal si quieres */}
-      <Route path="/super-admin" element={<RutaPrivada><SuperAdmin /></RutaPrivada>} />
-      
+      {/* Cualquier ruta desconocida redirige al inicio */}
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );
