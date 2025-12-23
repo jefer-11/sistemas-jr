@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext';
-import { Lock, PlusCircle, Trash2, Calculator } from 'lucide-react';
+import { Calculator, PlusCircle, Trash2 } from 'lucide-react';
 
 export function Caja() {
   const { usuario } = useAuth();
@@ -15,8 +15,8 @@ export function Caja() {
   const [entregaFinal, setEntregaFinal] = useState('');
   
   // DATOS AUTOMÁTICOS DB
-  const [autoCobros, setAutoCobros] = useState(0); // Total cobrado (Pagos)
-  const [autoPrestamos, setAutoPrestamos] = useState(0); // Total prestado (Creditos)
+  const [autoCobros, setAutoCobros] = useState(0); 
+  const [autoPrestamos, setAutoPrestamos] = useState(0); 
 
   // LISTA DINÁMICA DE GASTOS
   const [gastos, setGastos] = useState([]);
@@ -24,11 +24,11 @@ export function Caja() {
 
   // TIPOS DE GASTO
   const tiposGasto = [
-      {id: 'almuerzo', label: 'almuerzo'},
+      {id: 'almuerzo', label: 'Almuerzo'},
       {id: 'combustible', label: 'Combustible'},
       {id: 'mantenimiento', label: 'Mantenimiento'},
-      {id: 'aceite', label: 'aceite'},
-      {id: 'despinchada', label: 'despinchada'},
+      {id: 'aceite', label: 'Aceite'},
+      {id: 'despinchada', label: 'Despinchada'},
       {id: 'otros', label: 'Otros'}
   ];
 
@@ -36,17 +36,21 @@ export function Caja() {
 
   async function cargarDatosAuto() {
     setLoading(true);
-    const hoyInicio = new Date().toISOString().split('T')[0] + 'T00:00:00';
-    const hoyFin = new Date().toISOString().split('T')[0] + 'T23:59:59';
+    
+    // CORRECCIÓN FECHA: Usamos la fecha local para evitar problemas de zona horaria (UTC)
+    const hoy = new Date();
+    const fechaLocal = hoy.toLocaleDateString('en-CA'); // Formato YYYY-MM-DD
+    const hoyInicio = `${fechaLocal}T00:00:00`;
+    const hoyFin = `${fechaLocal}T23:59:59`;
 
     // 1. Total Cobros (Ingresos Auto)
     const { data: pagos } = await supabase.from('pagos').select('monto')
-        .eq('usuario_cobrador_id', usuario.id) // Solo lo que cobró este usuario
+        .eq('usuario_cobrador_id', usuario.id) 
         .gte('fecha_pago', hoyInicio).lte('fecha_pago', hoyFin);
     
     // 2. Total Préstamos (Egresos Auto)
     const { data: creditos } = await supabase.from('creditos').select('monto_capital')
-        .eq('usuario_creador_id', usuario.id) // Solo lo que prestó este usuario
+        .eq('usuario_creador_id', usuario.id) 
         .gte('created_at', hoyInicio).lte('created_at', hoyFin);
 
     setAutoCobros(pagos?.reduce((sum, p) => sum + p.monto, 0) || 0);
@@ -57,12 +61,12 @@ export function Caja() {
   // --- LÓGICA GASTOS ---
   const agregarGasto = () => {
       if(!nuevoGasto.monto || parseFloat(nuevoGasto.monto) <= 0) return;
-      setGastos([...gastos, { ...nuevoGasto, id: Date.now() }]); // ID temporal
+      setGastos([...gastos, { ...nuevoGasto, id: Date.now() }]); 
       setNuevoGasto({ ...nuevoGasto, monto: '' });
   };
   const eliminarGasto = (id) => setGastos(gastos.filter(g => g.id !== id));
 
-  // --- CÁLCULOS MATEMÁTICOS (TU FÓRMULA) ---
+  // --- CÁLCULOS MATEMÁTICOS ---
   const valBase = parseFloat(baseInicial) || 0;
   const valDepRecibidos = parseFloat(depositosRecibidos) || 0;
   const totalGastos = gastos.reduce((sum, g) => sum + parseFloat(g.monto), 0);

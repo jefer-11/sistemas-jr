@@ -22,26 +22,24 @@ export function Enrutador() {
   const [guardando, setGuardando] = useState(false);
 
   useEffect(() => {
-    cargarClientesActivos();
+    if (usuario) cargarClientesActivos();
   }, [usuario]);
 
   async function cargarClientesActivos() {
     setLoading(true);
     
     // --- FILTRO INTELIGENTE: SOLO ACTIVOS ---
-    // Usamos '!inner' para obligar a que el cliente tenga créditos que cumplan la condición
     const { data, error } = await supabase
       .from('clientes')
-      .select('*, creditos!inner(id, estado)') // Selecciona clientes QUE TENGAN créditos...
+      .select('*, creditos!inner(id, estado)') 
       .eq('empresa_id', usuario.empresa_id)
-      .eq('creditos.estado', 'ACTIVO') // ...cuyo estado sea ACTIVO
+      .eq('creditos.estado', 'ACTIVO') 
       .order('orden_ruta', { ascending: true });
     
     if (error) {
         console.error("Error cargando ruta:", error);
     } else {
-        // Filtramos duplicados por si acaso (aunque la relación suele manejarlo bien)
-        // y nos aseguramos de limpiar la data
+        // Filtramos duplicados
         const unicos = data.filter((v,i,a)=>a.findIndex(t=>(t.id===v.id))===i);
         setClientes(unicos || []);
     }
@@ -106,21 +104,18 @@ export function Enrutador() {
     setGuardando(true);
     try {
       const updates = clientes.map((c, i) => ({
-        id: c.id, // Solo necesitamos ID para actualizar
+        id: c.id, 
         empresa_id: usuario.empresa_id,
-        nombre_completo: c.nombre_completo, // Enviamos datos obligatorios para el upsert
-        dni: c.dni,
-        telefono_celular: c.telefono_celular,
-        direccion_texto: c.direccion_texto,
-        barrio: c.barrio,
-        orden_ruta: i + 1 // <--- ESTO ES LO QUE CAMBIA
+        nombre_completo: c.nombre_completo, 
+        orden_ruta: i + 1 
       }));
 
+      // upsert con onConflict id
       const { error } = await supabase.from('clientes').upsert(updates, { onConflict: 'id' });
       if (error) throw error;
       alert("✅ Orden guardado. Los cobradores verán la nueva ruta.");
       cargarClientesActivos(); 
-    } catch (error) { alert(error.message); } finally { setGuardando(false); }
+    } catch (error) { alert("Error al guardar: " + error.message); } finally { setGuardando(false); }
   };
 
   return (

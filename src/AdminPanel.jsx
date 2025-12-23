@@ -4,15 +4,14 @@ import { useAuth } from './AuthContext';
 import { 
   Activity, Search, TrendingUp, AlertTriangle, CheckCircle, XCircle, 
   DollarSign, MapPin, Users, Plus, Trash2, Edit3, Save, RefreshCw, 
-  ArrowRightLeft, Filter, BarChart3
+  ArrowRightLeft, Filter, BarChart3, Info
 } from 'lucide-react';
 
 export function AdminPanel() {
   const { usuario } = useAuth();
-  const [vista, setVista] = useState('finanzas'); // Iniciamos en Finanzas para ver el cambio
+  const [vista, setVista] = useState('finanzas'); 
   const [loading, setLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState(new Date());
-
+  
   // --- ESTADOS DE DATOS ---
   const [rutas, setRutas] = useState([]);
   const [cobradores, setCobradores] = useState([]);
@@ -20,10 +19,10 @@ export function AdminPanel() {
   const [todosLosPagosHoy, setTodosLosPagosHoy] = useState([]);
   const [todosLosClientes, setTodosLosClientes] = useState([]);
 
-  // --- FILTRO MAESTRO (LA CLAVE DE TU SOLICITUD) ---
+  // --- FILTRO MAESTRO ---
   const [filtroRutaId, setFiltroRutaId] = useState('TODAS');
 
-  // --- ESTADOS FINANCIEROS CALCULADOS ---
+  // --- ESTADOS FINANCIEROS ---
   const [finanzas, setFinanzas] = useState({ 
     dineroCalle: 0, 
     cobradoHoy: 0, 
@@ -38,7 +37,6 @@ export function AdminPanel() {
   const [historialCreditos, setHistorialCreditos] = useState([]);
   const [score, setScore] = useState('NEUTRO');
   const [nuevaRuta, setNuevaRuta] = useState('');
-  const [nuevoCobrador, setNuevoCobrador] = useState({ nombre: '', user: '', pass: '' });
   
   // Seguridad y Modales
   const [itemEliminar, setItemEliminar] = useState(null);
@@ -58,7 +56,6 @@ export function AdminPanel() {
     return () => clearInterval(interval);
   }, []);
 
-  // CADA VEZ QUE CAMBIA EL FILTRO DE RUTA, RECALCULAMOS LOS NÚMEROS
   useEffect(() => {
     recalcularFinanzas();
   }, [filtroRutaId, todosLosCreditos, todosLosPagosHoy]);
@@ -66,68 +63,62 @@ export function AdminPanel() {
   async function cargarTodo() {
     setLoading(true);
     // 1. Cargar Rutas y Personal
-    const { data: rutasData } = await supabase.from('rutas').select(`*, usuarios(nombre_completo)`).eq('empresa_id', usuario.empresa_id).order('id', { ascending: true });
-    const { data: cobradoresData } = await supabase.from('usuarios').select('*').eq('empresa_id', usuario.empresa_id).eq('rol', 'COBRADOR');
+    const { data: rutasData } = await supabase
+      .from('rutas')
+      .select(`*, usuarios(nombre_completo)`)
+      .eq('empresa_id', usuario.empresa_id)
+      .order('id', { ascending: true });
+      
+    // CORRECCIÓN: Ahora leemos los usuarios que el Trigger creó automáticamente
+    const { data: cobradoresData } = await supabase
+      .from('usuarios')
+      .select('*')
+      .eq('empresa_id', usuario.empresa_id)
+      .eq('rol', 'COBRADOR'); // Filtramos solo cobradores
     
     if (rutasData) setRutas(rutasData);
     if (cobradoresData) setCobradores(cobradoresData);
 
-    // 2. Cargar DATOS CRUDOS para cálculos (Estrategia de carga única y filtrado en memoria)
-    const hoyInicio = new Date().toISOString().split('T')[0] + 'T00:00:00';
-    const hoyFin = new Date().toISOString().split('T')[0] + 'T23:59:59';
+    // 2. Cargar DATOS CRUDOS para cálculos
+    const hoyInicio = new Date().toLocaleDateString('en-CA') + 'T00:00:00';
+    const hoyFin = new Date().toLocaleDateString('en-CA') + 'T23:59:59';
 
-    // Traemos Clientes para saber su ruta
     const { data: clientesData } = await supabase.from('clientes').select('id, ruta_id').eq('empresa_id', usuario.empresa_id);
     setTodosLosClientes(clientesData || []);
 
-    // Traemos Créditos Activos (Join manual en JS para velocidad)
     const { data: creditosData } = await supabase.from('creditos')
         .select('id, cliente_id, saldo_restante, monto_interes, estado, fecha_fin_estimada')
         .eq('empresa_id', usuario.empresa_id)
         .eq('estado', 'ACTIVO');
     setTodosLosCreditos(creditosData || []);
 
-    // Traemos Pagos de HOY
     const { data: pagosData } = await supabase.from('pagos')
         .select('monto, usuario_cobrador_id')
         .eq('empresa_id', usuario.empresa_id)
         .gte('fecha_pago', hoyInicio).lte('fecha_pago', hoyFin);
     setTodosLosPagosHoy(pagosData || []);
 
-    setLastUpdate(new Date());
     setLoading(false);
   }
 
-  // --- EL CEREBRO FINANCIERO (Lógica de Filtrado) ---
   function recalcularFinanzas() {
     let creditosFiltrados = [];
     let pagosFiltrados = [];
 
     if (filtroRutaId === 'TODAS') {
-        // Opción Global: Usamos todo
         creditosFiltrados = todosLosCreditos;
         pagosFiltrados = todosLosPagosHoy;
     } else {
-        // Opción Por Ruta: Filtramos
-        // 1. Identificar clientes de esa ruta
         const idsClientesRuta = todosLosClientes.filter(c => c.ruta_id === parseInt(filtroRutaId)).map(c => c.id);
-        
-        // 2. Filtrar créditos de esos clientes
         creditosFiltrados = todosLosCreditos.filter(c => idsClientesRuta.includes(c.cliente_id));
-
-        // 3. Filtrar pagos (Más complejo: necesitamos saber qué cobrador tiene esa ruta asignada)
-        // Para simplificar: Filtramos pagos hechos a créditos de clientes de esa ruta
-        // (Nota: En una V2 ideal, el pago debería guardar el ruta_id, pero esto funciona bien por ahora)
-        // Aproximación por cobrador asignado a la ruta:
         const rutaActual = rutas.find(r => r.id === parseInt(filtroRutaId));
         if (rutaActual && rutaActual.usuario_cobrador_id) {
             pagosFiltrados = todosLosPagosHoy.filter(p => p.usuario_cobrador_id === rutaActual.usuario_cobrador_id);
         } else {
-            pagosFiltrados = []; // Ruta sin cobrador, asumimos 0 cobros por ahora
+            pagosFiltrados = [];
         }
     }
 
-    // Cálculos
     let totalCalle = 0;
     let totalVencido = 0;
     let totalGanancia = 0;
@@ -135,7 +126,7 @@ export function AdminPanel() {
 
     creditosFiltrados.forEach(c => {
         totalCalle += c.saldo_restante;
-        totalGanancia += c.monto_interes; // Ganancia proyectada de lo activo
+        totalGanancia += c.monto_interes;
         if (new Date(c.fecha_fin_estimada) < fechaHoy) {
             totalVencido += c.saldo_restante;
         }
@@ -152,9 +143,7 @@ export function AdminPanel() {
     });
   }
 
-  // --- FUNCIONES AUXILIARES (Migración, Auditoría, CRUD) ---
-  // (Mantenemos la lógica que ya funcionaba, resumida por espacio pero completa en funcionalidad)
-  
+  // --- MIGRACIÓN ---
   useEffect(() => { if (rutaOrigen) contarClientesEnRuta(rutaOrigen); }, [rutaOrigen]);
   async function contarClientesEnRuta(idRuta) {
       const { count } = await supabase.from('clientes').select('*', { count: 'exact', head: true }).eq('ruta_id', idRuta);
@@ -162,36 +151,53 @@ export function AdminPanel() {
   }
   async function ejecutarMigracion() {
       if (!rutaOrigen || !rutaDestino || rutaOrigen === rutaDestino) return alert("Selecciona rutas válidas.");
+      // CORRECCIÓN: Usamos la función RPC segura para validar contraseña
       const pass = prompt(`Mover ${conteoMigracion} clientes. Ingresa contraseña:`);
       if (!pass) return;
       setLoading(true);
       try {
-          const { data: admin } = await supabase.from('usuarios').select('id').eq('id', usuario.id).eq('password_hash', pass).single();
-          if (!admin) throw new Error("Contraseña incorrecta.");
+          const { data: esValido, error } = await supabase.rpc('validar_pin_seguro', { p_user_id: usuario.id, p_password: pass });
+          if (error || !esValido) throw new Error("Contraseña incorrecta.");
+
           await supabase.from('clientes').update({ ruta_id: rutaDestino }).eq('ruta_id', rutaOrigen).eq('empresa_id', usuario.empresa_id);
           alert("Migración exitosa."); setRutaOrigen(''); setRutaDestino(''); cargarTodo();
       } catch (e) { alert(e.message); } finally { setLoading(false); }
   }
 
+  // --- ELIMINAR ---
   const confirmarEliminacion = async (e) => {
     e.preventDefault();
     if (!passConfirmacion) return alert("Ingresa contraseña.");
     setLoadingSecurity(true);
     try {
-      const { data: admin } = await supabase.from('usuarios').select('id').eq('id', usuario.id).eq('password_hash', passConfirmacion).single();
-      if (!admin) throw new Error("Incorrecto.");
-      if (itemEliminar.tipo === 'ruta') { await supabase.from('rutas').delete().eq('id', itemEliminar.data.id); setRutas(rutas.filter(r => r.id !== itemEliminar.data.id)); }
-      else { await supabase.from('usuarios').delete().eq('id', itemEliminar.data.id); setCobradores(cobradores.filter(c => c.id !== itemEliminar.data.id)); }
-      setItemEliminar(null); setPassConfirmacion(''); alert("Eliminado.");
+      // CORRECCIÓN: Validación segura RPC
+      const { data: esValido, error } = await supabase.rpc('validar_pin_seguro', { p_user_id: usuario.id, p_password: passConfirmacion });
+      if (error || !esValido) throw new Error("Contraseña incorrecta.");
+
+      if (itemEliminar.tipo === 'ruta') { 
+          await supabase.from('rutas').delete().eq('id', itemEliminar.data.id); 
+          setRutas(rutas.filter(r => r.id !== itemEliminar.data.id)); 
+      }
+      else { 
+          // NOTA: Solo eliminamos el registro público. El login de Auth debe borrarse en el panel de Supabase.
+          await supabase.from('usuarios').delete().eq('id', itemEliminar.data.id); 
+          setCobradores(cobradores.filter(c => c.id !== itemEliminar.data.id)); 
+          alert("Usuario desvinculado de la empresa. (Recuerda borrarlo también en Supabase Auth si es necesario)");
+      }
+      setItemEliminar(null); setPassConfirmacion(''); 
     } catch (e) { alert(e.message); } finally { setLoadingSecurity(false); }
   };
 
   async function crearRuta(e) { e.preventDefault(); if(!nuevaRuta.trim())return; const {data}=await supabase.from('rutas').insert([{empresa_id:usuario.empresa_id, nombre:nuevaRuta.toUpperCase(), estado:true}]).select().single(); if(data){setRutas([...rutas,{...data, usuarios:null}]); setNuevaRuta('');} }
-  async function crearCobrador(e) { e.preventDefault(); if(nuevoCobrador.pass.length<4)return alert("Clave corta"); const {data}=await supabase.from('usuarios').insert([{empresa_id:usuario.empresa_id, nombre_completo:nuevoCobrador.nombre.toUpperCase(), username:nuevoCobrador.user, password_hash:nuevoCobrador.pass, rol:'COBRADOR', estado:true}]).select().single(); if(data){setCobradores([...cobradores, data]); setNuevoCobrador({nombre:'',user:'',pass:''});} }
-  async function asignarCobrador(rid, uid) { setRutas(rutas.map(r=>r.id===rid?{...r, usuario_cobrador_id:uid}:r)); await supabase.from('rutas').update({usuario_cobrador_id:uid||null}).eq('id', rid); }
+  
+  async function asignarCobrador(rid, uid) { 
+      setRutas(rutas.map(r=>r.id===rid?{...r, usuario_cobrador_id:uid}:r)); 
+      await supabase.from('rutas').update({usuario_cobrador_id:uid||null}).eq('id', rid); 
+  }
+  
   async function guardarNombreRuta(id) { if(!nombreEditado.trim())return; await supabase.from('rutas').update({nombre:nombreEditado.toUpperCase()}).eq('id', id); setRutas(rutas.map(r=>r.id===id?{...r, nombre:nombreEditado.toUpperCase()}:r)); setRutaEditando(null); }
   
-  // Auditoría
+  // --- AUDITORÍA ---
   async function buscarHistorial(e) {
     e.preventDefault(); setLoading(true);
     const { data: cls } = await supabase.from('clientes').select('*').eq('empresa_id', usuario.empresa_id).or(`dni.eq.${busquedaCliente},nombre_completo.ilike.%${busquedaCliente}%`).limit(1);
@@ -199,14 +205,12 @@ export function AdminPanel() {
         setClienteEncontrado(cls[0]);
         const {data:crs} = await supabase.from('creditos').select('*').eq('cliente_id', cls[0].id).order('created_at', {ascending:false});
         setHistorialCreditos(crs||[]);
-        // Score simple
         let m=0; crs?.forEach(c=>{ if((c.estado==='ACTIVO' && new Date()>new Date(c.fecha_fin_estimada)) || new Date(c.fecha_ultimo_pago)>new Date(c.fecha_fin_estimada)) m++; });
         setScore(m===0?'VERDE':m<=2?'AMARILLO':'ROJO');
     } else alert("No encontrado");
     setLoading(false);
   }
 
-  // AUXILIAR TIEMPO
   const calcularHaceCuanto = (fechaIso) => {
     if (!fechaIso) return 'Nunca';
     const min = Math.floor((new Date()-new Date(fechaIso))/60000);
@@ -231,10 +235,10 @@ export function AdminPanel() {
         <button onClick={() => setVista('operativo')} style={vista === 'operativo' ? btnActivo : btnInactivo}>⚙️ Gestión</button>
       </div>
 
-      {/* --- VISTA 1: FINANZAS (EL DASHBOARD ESTRUCTURADO) --- */}
+      {/* --- VISTA 1: FINANZAS --- */}
       {vista === 'finanzas' && (
         <div>
-            {/* 1. FILTRO MAESTRO DE RUTAS */}
+            {/* FILTRO MAESTRO */}
             <div style={{backgroundColor:'white', padding:'15px', borderRadius:'12px', border:'2px solid #2563eb', marginBottom:'20px', display:'flex', alignItems:'center', gap:'15px', flexWrap:'wrap'}}>
                 <div style={{display:'flex', alignItems:'center', gap:'10px', flex:1}}>
                     <Filter size={24} color="#2563eb"/>
@@ -251,7 +255,7 @@ export function AdminPanel() {
                 </select>
             </div>
 
-            {/* 2. TARJETAS DE RESULTADOS (Se actualizan según el filtro) */}
+            {/* TARJETAS */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '15px', marginBottom:'30px' }}>
                 <div style={{ backgroundColor: '#1e3a8a', color: 'white', padding: '20px', borderRadius: '12px', boxShadow:'0 4px 6px rgba(0,0,0,0.1)' }}>
                     <div style={{opacity:0.8, fontSize:'12px', fontWeight:'bold'}}>CAPITAL EN CALLE</div>
@@ -275,7 +279,7 @@ export function AdminPanel() {
                 </div>
             </div>
 
-            {/* 3. RANKING DE RUTAS (Solo visible en modo GLOBAL) */}
+            {/* RANKING RUTAS */}
             {filtroRutaId === 'TODAS' && (
                 <div style={{backgroundColor:'white', padding:'20px', borderRadius:'12px', border:'1px solid #e5e7eb'}}>
                     <h3 style={{marginTop:0, color:'#374151', display:'flex', alignItems:'center', gap:'10px'}}>
@@ -334,6 +338,7 @@ export function AdminPanel() {
                         ) : <div style={{fontSize:'12px', color:'#9ca3af', fontStyle:'italic', marginTop:'10px'}}>Esperando conexión...</div>}
                     </div>
                 ))}
+                {cobradores.length === 0 && <div style={{color:'#666', fontStyle:'italic'}}>No hay cobradores activos.</div>}
              </div>
          </div>
       )}
@@ -370,7 +375,7 @@ export function AdminPanel() {
         </div>
       )}
 
-      {/* --- VISTA 4: OPERATIVO --- */}
+      {/* --- VISTA 4: OPERATIVO (CORREGIDA) --- */}
       {vista === 'operativo' && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
             <div>
@@ -411,31 +416,44 @@ export function AdminPanel() {
 
             <div>
                 <h3 style={{color:'#374151'}}>Personal</h3>
-                <div style={{backgroundColor:'white', padding:'15px', borderRadius:'8px', border:'1px solid #ddd', marginBottom:'15px'}}>
-                    <input placeholder="Nombre" value={nuevoCobrador.nombre} onChange={e => setNuevoCobrador({...nuevoCobrador, nombre: e.target.value})} style={{...inputStyle, marginBottom:'5px', width:'100%'}} />
-                    <input placeholder="Usuario" value={nuevoCobrador.user} onChange={e => setNuevoCobrador({...nuevoCobrador, user: e.target.value})} style={{...inputStyle, marginBottom:'5px', width:'100%'}} />
-                    <input placeholder="Clave" value={nuevoCobrador.pass} onChange={e => setNuevoCobrador({...nuevoCobrador, pass: e.target.value})} style={{...inputStyle, marginBottom:'5px', width:'100%'}} />
-                    <button onClick={crearCobrador} style={{...btnVerde, width:'100%'}}>Crear</button>
+                
+                {/* CORRECCIÓN: INSTRUCCIÓN EN LUGAR DE FORMULARIO ROTO */}
+                <div style={{backgroundColor:'#f0fdf4', padding:'15px', borderRadius:'8px', border:'1px solid #bbf7d0', marginBottom:'15px', display:'flex', gap:'10px'}}>
+                    <Info color="#16a34a" size={24} style={{minWidth:'24px'}} />
+                    <div style={{fontSize:'13px', color:'#14532d'}}>
+                        <strong>¿Cómo crear un nuevo cobrador?</strong><br/>
+                        Simplemente regístralo desde la pantalla de <strong>Login</strong> o desde el Panel de Supabase. El sistema lo detectará automáticamente y lo mostrará aquí para que puedas asignarle rutas.
+                    </div>
                 </div>
+
                 {cobradores.map(c => (
-                    <div key={c.id} style={{backgroundColor:'white', padding:'10px', marginBottom:'5px', borderRadius:'8px', border:'1px solid #ddd', display:'flex', justifyContent:'space-between'}}>
-                        <div>{c.nombre_completo} <br/><small style={{color:'#666'}}>{c.username}</small></div>
-                        <button onClick={() => {setItemEliminar({tipo:'cobrador', data:c}); setPassConfirmacion('')}} style={{color:'red', border:'none', background:'none'}}><Trash2 size={16}/></button>
+                    <div key={c.id} style={{backgroundColor:'white', padding:'10px', marginBottom:'5px', borderRadius:'8px', border:'1px solid #ddd', display:'flex', justifyContent:'space-between', alignItems:'center'}}>
+                        <div>
+                            <strong>{c.nombre_completo}</strong> <br/>
+                            <small style={{color:'#666'}}>{c.email || 'Usuario importado'}</small>
+                        </div>
+                        <button onClick={() => {setItemEliminar({tipo:'cobrador', data:c}); setPassConfirmacion('')}} style={{color:'red', border:'none', background:'none', cursor:'pointer'}} title="Desvincular"><Trash2 size={16}/></button>
                     </div>
                 ))}
+                {cobradores.length === 0 && <div style={{textAlign:'center', padding:'20px', color:'#999'}}>No hay cobradores registrados aún.</div>}
             </div>
         </div>
       )}
 
       {/* MODAL ELIMINAR */}
       {itemEliminar && (
-        <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.5)', display:'flex', justifyContent:'center', alignItems:'center'}}>
-            <div style={{backgroundColor:'white', padding:'20px', borderRadius:'10px', width:'300px', textAlign:'center'}}>
-                <h3>Confirmar con Clave</h3>
-                <input type="password" value={passConfirmacion} onChange={e => setPassConfirmacion(e.target.value)} style={{...inputStyle, width:'100%', marginBottom:'10px'}} autoFocus />
+        <div style={{position:'fixed', top:0, left:0, width:'100%', height:'100%', background:'rgba(0,0,0,0.5)', display:'flex', justifyContent:'center', alignItems:'center', zIndex:100}}>
+            <div style={{backgroundColor:'white', padding:'20px', borderRadius:'10px', width:'300px', textAlign:'center', boxShadow:'0 10px 25px rgba(0,0,0,0.2)'}}>
+                <h3>Confirmar Acción</h3>
+                <p style={{fontSize:'13px', color:'#666', marginBottom:'15px'}}>
+                    Ingresa tu <strong>Contraseña</strong> para continuar.
+                </p>
+                <input type="password" value={passConfirmacion} onChange={e => setPassConfirmacion(e.target.value)} style={{...inputStyle, width:'100%', marginBottom:'10px', textAlign:'center'}} autoFocus />
                 <div style={{display:'flex', gap:'10px'}}>
-                    <button onClick={() => setItemEliminar(null)} style={{flex:1, padding:'10px'}}>Cancelar</button>
-                    <button onClick={confirmarEliminacion} style={{flex:1, padding:'10px', background:'red', color:'white', border:'none'}}>Eliminar</button>
+                    <button onClick={() => setItemEliminar(null)} style={{flex:1, padding:'10px', border:'1px solid #ddd', borderRadius:'6px', cursor:'pointer', backgroundColor:'white'}}>Cancelar</button>
+                    <button onClick={confirmarEliminacion} disabled={loadingSecurity} style={{flex:1, padding:'10px', background:'red', color:'white', border:'none', borderRadius:'6px', cursor:'pointer'}}>
+                        {loadingSecurity ? '...' : 'Confirmar'}
+                    </button>
                 </div>
             </div>
         </div>

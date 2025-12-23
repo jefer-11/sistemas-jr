@@ -1,15 +1,13 @@
 import { useState, useEffect } from 'react';
 import { supabase } from './supabaseClient';
 import { useAuth } from './AuthContext'; 
-import { TrendingUp, TrendingDown, DollarSign, Lock, ShieldCheck, Wallet, PieChart, Activity } from 'lucide-react';
+import { PieChart, ShieldCheck, Lock, Activity } from 'lucide-react';
 
 export function Capital() {
   const { usuario } = useAuth();
 
   // 🛡️ ESCUDO DE SEGURIDAD
   if (!usuario) return <div style={{padding:'20px'}}>Cargando perfil...</div>;
-  
-  // SEGURIDAD: Solo Admin
   if (usuario.rol !== 'ADMIN' && usuario.rol !== 'SUPER_ADMIN') {
       return <div style={{padding:'20px', color:'red'}}>⛔ Acceso Restringido</div>;
   }
@@ -18,8 +16,8 @@ export function Capital() {
     capitalEnCalle: 0, 
     gananciaProyectada: 0, 
     totalCreditos: 0,
-    capitalInvertido: 0, // Inyecciones - Retiros
-    globalTotal: 0       // Invertido + Calle
+    capitalInvertido: 0, 
+    globalTotal: 0      
   });
 
   const [movimientos, setMovimientos] = useState([]);
@@ -47,13 +45,13 @@ export function Capital() {
     });
 
     // 2. MOVIMIENTOS (Dinero Invertido vs Retirado)
+    // Se usa la nueva tabla movimientos_capital
     const { data: hist } = await supabase
       .from('movimientos_capital')
-      .select('*, usuarios(nombre_completo)')
+      .select('*')
       .eq('empresa_id', usuario.empresa_id)
       .order('fecha_movimiento', { ascending: false });
     
-    // CÁLCULO DEL CAPITAL NETO (BASE)
     let inyecciones = 0;
     let retiros = 0;
     
@@ -63,8 +61,6 @@ export function Capital() {
     });
 
     const capitalNeto = inyecciones - retiros;
-    
-    // CÁLCULO GLOBAL SOLICITADO (Base + Calle)
     const granTotal = capitalNeto + calle;
 
     setFinanzas({ 
@@ -83,14 +79,16 @@ export function Capital() {
     setLoading(true);
 
     try {
-      const { data: validUser } = await supabase
-        .from('usuarios')
-        .select('id')
-        .eq('id', usuario.id)
-        .eq('password_hash', form.password)
-        .single();
+      // CORRECCIÓN SEGURIDAD: 
+      // Llamamos a la función segura en base de datos (RPC) en vez de comparar aquí
+      const { data: esValido, error: rpcError } = await supabase
+        .rpc('validar_pin_seguro', { 
+            p_user_id: usuario.id, 
+            p_password: form.password 
+        });
 
-      if (!validUser) throw new Error("⛔ Contraseña incorrecta.");
+      if (rpcError) throw rpcError;
+      if (!esValido) throw new Error("⛔ Contraseña incorrecta.");
 
       const { error } = await supabase.from('movimientos_capital').insert([{
         empresa_id: usuario.empresa_id,
@@ -119,7 +117,7 @@ export function Capital() {
         <PieChart color="#7c3aed"/> Gestión de Capital
       </h2>
 
-      {/* --- SECCIÓN 1: EL GLOBAL (LA CIFRA PODEROSA) --- */}
+      {/* --- SECCIÓN 1: EL GLOBAL --- */}
       <div style={{ backgroundColor: '#111827', color: 'white', padding: '30px', borderRadius: '15px', textAlign: 'center', boxShadow: '0 10px 25px rgba(0,0,0,0.2)', marginBottom: '25px', position:'relative', overflow:'hidden' }}>
           <div style={{position:'absolute', top:'-10px', right:'-10px', opacity:0.1}}><Activity size={100}/></div>
           <div style={{ fontSize: '16px', opacity: 0.9, color:'#a78bfa', fontWeight:'bold', letterSpacing:'1px' }}>GLOBAL (MÚSCULO FINANCIERO)</div>
