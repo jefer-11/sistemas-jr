@@ -14,52 +14,39 @@ export function Login({ onLoginSuccess }) {
     setError(null);
 
     try {
-      // 1. CORRECCIÓN AQUÍ: Agregamos 'telefono_corporativo' a la consulta
-      const { data, error } = await supabase
+      // 1. Buscamos el usuario en la BD Mockeada
+      const { data: usuarioBD, error: errBusqueda } = await supabase
         .from('usuarios')
-        .select(`
-          *,
-          empresas ( id, nombre_empresa, estado, fecha_vencimiento, telefono_corporativo )
-        `)
+        .select(`*, empresas ( id, nombre_empresa, estado )`)
         .eq('username', username)
         .eq('password_hash', password)
         .single();
 
-      if (error || !data) throw new Error('Usuario o contraseña incorrectos');
+      if (errBusqueda || !usuarioBD) throw new Error('Usuario o contraseña incorrectos');
       
-      const isSuperAdmin = data.rol === 'SUPER_ADMIN';
-
-      // 2. Validaciones de Seguridad SaaS
-      if (!data.estado) throw new Error('Tu usuario ha sido desactivado por el administrador.');
+      // 2. Validaciones de Negocio (con seguridad anti-crash ?.)
+      if (!usuarioBD.estado) throw new Error('Usuario desactivado.');
       
-      if (!isSuperAdmin) { 
-        if (!data.empresas.estado) throw new Error('El servicio de tu empresa está suspendido por falta de pago.');
-        
-        const hoy = new Date();
-        const vencimiento = new Date(data.empresas.fecha_vencimiento);
-        if (hoy > vencimiento) throw new Error('La licencia de tu empresa ha vencido.');
+      const esSuperAdmin = usuarioBD.rol === 'SUPER_ADMIN';
+      const empresaActiva = usuarioBD.empresas?.estado ?? true; // En mock, asumimos activo si falta info
+      
+      if (!esSuperAdmin && !empresaActiva) {
+        throw new Error('Empresa suspendida.');
       }
 
-      // 3. INICIO DE SESIÓN
-      const customJWT = {
-        sub: data.id, 
-        rol: data.rol,
-        empresa_id: data.empresa_id
-      };
-
-      await supabase.auth.setSession({
-        access_token: JSON.stringify(customJWT),
-        token_type: 'bearer',
+      // 3. Guardar Sesión (Ahora sí funciona setSession en el mock)
+      const { error: errSession } = await supabase.auth.setSession({
         user: {
-          id: data.id,
-          aud: 'authenticated',
-          role: data.rol,
-          email: data.username + '@sistema.local' 
+          id: usuarioBD.id,
+          email: usuarioBD.email || 'mock@email.com',
+          role: usuarioBD.rol
         }
       });
+
+      if (errSession) throw errSession;
       
       // 4. Éxito
-      onLoginSuccess(data);
+      onLoginSuccess(usuarioBD);
 
     } catch (err) {
       console.error(err);
@@ -78,43 +65,30 @@ export function Login({ onLoginSuccess }) {
              <Building2 size={35} color="#2563eb" />
           </div>
           <h2 style={{ color: '#000000', margin: 0, fontSize: '24px', fontWeight: '800' }}>ACCESO SISTEMA</h2>
-          <p style={{ color: '#374151', fontSize: '15px', fontWeight: '600', margin: '5px 0 0 0' }}>Control de Créditos</p>
+          <p style={{ color: '#374151', fontSize: '15px', fontWeight: '600', margin: '5px 0 0 0' }}>Modo Diseño (Sin BD)</p>
         </div>
 
         <form onSubmit={handleLogin} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          
           <div>
-            <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px', color: '#111827', fontSize: '13px', letterSpacing: '0.5px' }}>USUARIO</label>
+            <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px', color: '#111827', fontSize: '13px' }}>USUARIO</label>
             <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #4b5563', borderRadius: '8px', padding: '10px', backgroundColor: 'white' }}>
               <User size={22} color="#111827" style={{ marginRight: '10px' }} />
-              <input 
-                type="text" 
-                value={username} 
-                onChange={(e) => setUsername(e.target.value)} 
-                placeholder="Ingresa tu usuario"
-                style={{ border: 'none', outline: 'none', width: '100%', fontSize: '16px', fontWeight: '600', color: 'black', background: 'transparent' }}
-              />
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="Ej: admin" style={{ border: 'none', outline: 'none', width: '100%', fontSize: '16px', fontWeight: '600', color: 'black' }} />
             </div>
           </div>
 
           <div>
-            <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px', color: '#111827', fontSize: '13px', letterSpacing: '0.5px' }}>CONTRASEÑA</label>
+            <label style={{ display: 'block', fontWeight: '800', marginBottom: '8px', color: '#111827', fontSize: '13px' }}>CONTRASEÑA</label>
             <div style={{ display: 'flex', alignItems: 'center', border: '2px solid #4b5563', borderRadius: '8px', padding: '10px', backgroundColor: 'white' }}>
               <Lock size={22} color="#111827" style={{ marginRight: '10px' }} />
-              <input 
-                type="password" 
-                value={password} 
-                onChange={(e) => setPassword(e.target.value)} 
-                placeholder="••••••"
-                style={{ border: 'none', outline: 'none', width: '100%', fontSize: '16px', fontWeight: '600', color: 'black', background: 'transparent' }}
-              />
+              <input type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Ej: 123456" style={{ border: 'none', outline: 'none', width: '100%', fontSize: '16px', fontWeight: '600', color: 'black' }} />
             </div>
           </div>
 
           {error && <div style={{ color: '#7f1d1d', backgroundColor: '#fca5a5', padding: '12px', borderRadius: '6px', textAlign: 'center', fontWeight: 'bold', border: '2px solid #ef4444', fontSize: '14px' }}>⚠️ {error}</div>}
 
-          <button type="submit" disabled={loading} style={{ backgroundColor: '#2563eb', color: 'white', padding: '15px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', marginTop: '10px', boxShadow: '0 4px 6px rgba(0,0,0,0.2)' }}>
-            {loading ? 'VALIDANDO...' : 'INGRESAR AL SISTEMA'}
+          <button type="submit" disabled={loading} style={{ backgroundColor: '#2563eb', color: 'white', padding: '15px', borderRadius: '8px', border: 'none', cursor: 'pointer', fontWeight: 'bold', fontSize: '16px', marginTop: '10px' }}>
+            {loading ? 'VALIDANDO...' : 'INGRESAR'}
           </button>
         </form>
       </div>

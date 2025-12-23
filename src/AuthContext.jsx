@@ -8,34 +8,35 @@ export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {
   const [usuarioSesion, setUsuarioSesion] = useState(null);
-  const [cargandoSesion, setCargandoSesion] = useState(true); 
+  const [cargandoSesion, setCargandoSesion] = useState(true);
   const [pantallaActual, setPantallaActual] = useState('dashboard');
   const [clientePreseleccionado, setClientePreseleccionado] = useState(null);
 
-  // --- 1. EFECTO DE PERSISTENCIA ---
   useEffect(() => {
     async function recuperarSesion() {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
-
-        if (session && session.user) {
-          console.log("Sesión recuperada, buscando datos del usuario...");
+        const { data } = await supabase.auth.getSession();
+        
+        if (data?.session?.user) {
+          const userId = data.session.user.id;
           
+          // Buscamos el usuario completo en nuestra "BD"
           const { data: usuarioBD, error } = await supabase
             .from('usuarios')
-            .select(`
-              *,
-              empresas ( id, nombre_empresa, estado, fecha_vencimiento, telefono_corporativo )
-            `)
-            .eq('id', session.user.id)
+            .select(`*, empresas ( id, nombre_empresa, estado )`)
+            .eq('id', userId)
             .single();
 
           if (!error && usuarioBD) {
-            // CORRECCIÓN AQUÍ: Uso de ?. para evitar crash si empresa es null
-            if (usuarioBD.estado && (usuarioBD.rol === 'SUPER_ADMIN' || usuarioBD.empresas?.estado)) {
+            // AUDITORÍA: Validación robusta. Si empresa es undefined, no rompe la app.
+            const empresaActiva = usuarioBD.empresas?.estado ?? true; // Asumimos true en mock si falta
+            const esSuperAdmin = usuarioBD.rol === 'SUPER_ADMIN';
+
+            if (usuarioBD.estado && (esSuperAdmin || empresaActiva)) {
                setUsuarioSesion(usuarioBD);
             } else {
-               await supabase.auth.signOut(); 
+               console.warn("Usuario inactivo o empresa suspendida");
+               await supabase.auth.signOut();
             }
           }
         }
@@ -45,25 +46,9 @@ export function AuthProvider({ children }) {
         setCargandoSesion(false);
       }
     }
-
     recuperarSesion();
   }, []);
 
-  // --- RASTREADOR GPS (Solo para Cobradores) ---
-  useEffect(() => {
-    let watchId;
-    if (usuarioSesion?.rol === 'COBRADOR' && 'geolocation' in navigator) {
-      const opcionesGPS = { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 };
-      
-      watchId = navigator.geolocation.watchPosition(async (position) => {
-        const { latitude, longitude } = position.coords;
-        await supabase.from('usuarios').update({ last_lat: latitude, last_lon: longitude, last_seen: new Date() }).eq('id', usuarioSesion.id);
-      }, (err) => console.error("Error GPS:", err), opcionesGPS);
-    }
-    return () => { if (watchId) navigator.geolocation.clearWatch(watchId); };
-  }, [usuarioSesion]);
-  
-  // --- FUNCIONES DEL SISTEMA ---
   const cerrarSesion = async () => {
     await supabase.auth.signOut();
     setUsuarioSesion(null);
@@ -75,20 +60,16 @@ export function AuthProvider({ children }) {
     setPantallaActual('creditos');
   };
 
-  // --- RENDERIZADO ---
-  if (cargandoSesion) {
-    return <div style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center', color:'#666'}}>Recuperando sesión...</div>;
-  }
+  if (cargandoSesion) return <div style={{height:'100vh', display:'flex', justifyContent:'center', alignItems:'center'}}>Cargando Sistema...</div>;
 
-  if (!usuarioSesion) {
-    return <Login onLoginSuccess={(datos) => setUsuarioSesion(datos)} />;
-  }
+  if (!usuarioSesion) return <Login onLoginSuccess={(datos) => setUsuarioSesion(datos)} />;
   
   const contextValue = {
     usuario: usuarioSesion,
     rol: usuarioSesion?.rol,
     esSuperAdmin: usuarioSesion?.rol === 'SUPER_ADMIN',
     esAdmin: usuarioSesion?.rol === 'ADMIN' || usuarioSesion?.rol === 'SUPER_ADMIN',
+    nombreEmpresa: usuarioSesion?.empresas?.nombre_empresa || 'Empresa Demo',
     pantallaActual,
     setPantallaActual,
     clientePreseleccionado,
@@ -96,9 +77,5 @@ export function AuthProvider({ children }) {
     cerrarSesion
   };
 
-  return (
-    <AuthContext.Provider value={contextValue}>
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;
 }

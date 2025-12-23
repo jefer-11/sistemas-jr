@@ -3,62 +3,80 @@
   line-height: 1.5;
   font-weight: 400;
   
-  /* PALETA VISUAL ALTO CONTRASTE */
+  /* PALETA VISUAL (Modo Claro/SaaS) */
   --bg-app: #f3f4f6;
   --text-main: #111827; 
   --text-sec: #374151;
   --primary: #2563eb;
+  --primary-dark: #1e40af;
   --danger: #dc2626;
   --success: #16a34a;
+  --warning: #f59e0b;
+  --white: #ffffff;
 }
 
 * {
-  box-sizing: border-box; /* Vital para que el padding no rompa el ancho */
-  -webkit-tap-highlight-color: transparent; /* Quita el destello azul al tocar en Android */
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
 }
 
 body {
   margin: 0;
+  padding: 0;
   background-color: var(--bg-app);
   color: var(--text-main);
   min-width: 320px;
   min-height: 100vh;
-  font-size: 16px; /* Tamaño base estándar para móviles */
+  font-size: 16px;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden; /* Evita scroll horizontal accidental */
 }
 
-/* --- OPTIMIZACIÓN TÁCTIL (TOUCH FRIENDLY) --- */
-
-/* Inputs grandes y fáciles de tocar (Evita zoom en iPhone/Android) */
-input, select, textarea {
-  border: 1px solid #6b7280 !important; /* Borde visible */
-  border-radius: 8px !important;
-  color: #000000 !important; /* Texto negro puro */
-  background-color: #ffffff;
-  font-size: 16px !important; /* Mínimo 16px para evitar zoom automático */
-  padding: 12px !important; /* Espacio cómodo para el dedo */
+/* CORRECCIÓN CRÍTICA: Asegurar que la App llene la pantalla */
+#root {
   width: 100%;
-  margin-bottom: 10px;
-  font-weight: 500;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
 }
 
-input:focus, select:focus {
+/* --- OPTIMIZACIÓN UI MÓVIL (Inputs y Botones) --- */
+
+input, select, textarea {
+  border: 1px solid #d1d5db !important;
+  border-radius: 8px !important;
+  color: #111827 !important;
+  background-color: #ffffff;
+  font-size: 16px !important; /* Evita zoom en iOS */
+  padding: 12px !important;
+  width: 100%;
+  margin-bottom: 12px;
+  font-family: inherit;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--primary) !important;
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.15);
 }
 
-/* Botones con sensación de App */
 button {
   font-family: inherit;
   cursor: pointer;
-  touch-action: manipulation; /* Mejora la respuesta rápida al toque */
-  transition: transform 0.1s, opacity 0.1s;
+  touch-action: manipulation;
+  transition: all 0.2s ease;
+  font-weight: 600;
 }
 
 button:active {
-  transform: scale(0.96); /* Efecto visual de "presionar" botón */
-  opacity: 0.9;
+  transform: scale(0.98);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 /* Tablas Responsivas */
@@ -67,14 +85,7 @@ table {
   border-collapse: collapse;
 }
 
-/* Scroll suave nativo */
-div {
-  -webkit-overflow-scrolling: touch;
-}
-
-/* Ajustes para pantallas pequeñas (Celulares < 400px) */
-@media (max-width: 400px) {
-  h2 { font-size: 20px !important; }
-  h3 { font-size: 18px !important; }
-  button { font-size: 14px !important; }
+/* Scroll suave */
+html {
+  scroll-behavior: smooth;
 }

@@ -1,54 +1,157 @@
-// src/Layout.jsx
+import React from 'react';
+import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthContext';
-import { Outlet, Link, useNavigate } from 'react-router-dom';
-import { LayoutGrid, UserCircle, LogOut, Shield } from 'lucide-react';
+import { 
+  LayoutDashboard, Users, Banknote, Calculator, 
+  Settings, LogOut, Map, TrendingUp, UserCircle, ShieldCheck
+} from 'lucide-react';
 
 export function Layout() {
-  const { usuario, rol, cerrarSesion } = useAuth();
-  const navigate = useNavigate();
+  const { usuario, cerrarSesion, esSuperAdmin, rol } = useAuth();
+  const location = useLocation();
 
-  const colorBarra = rol === 'ADMIN' ? '#111827' : '#2563eb';
-  const nombreEmpresa = usuario?.empresas?.nombre_empresa || 'Empresa';
-  const tituloRol = rol === 'ADMIN' ? 'ADMINISTRADOR' : 'COBRADOR';
-
-  const handleLogout = async () => {
-    await cerrarSesion();
-    navigate('/login');
-  };
+  const isActive = (path) => location.pathname === path ? 
+    { backgroundColor: '#2563eb', color: 'white' } : {};
 
   return (
-    <div style={{ fontFamily: 'Roboto, sans-serif', backgroundColor: '#f3f4f6', minHeight: '100vh', paddingBottom:'20px' }}>
+    <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: '#f3f4f6' }}>
       
-      {/* --- NAVBAR FIJA --- */}
-      <nav style={{ backgroundColor: colorBarra, color: 'white', padding: '15px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', position: 'sticky', top: 0, zIndex: 100, boxShadow: '0 2px 5px rgba(0,0,0,0.2)' }}>
+      {/* --- SIDEBAR (MENÚ LATERAL) --- */}
+      <aside style={{ 
+        width: '260px', 
+        backgroundColor: '#ffffff', 
+        borderRight: '1px solid #e5e7eb',
+        display: 'flex', 
+        flexDirection: 'column',
+        position: 'fixed',
+        height: '100%',
+        zIndex: 10
+      }}>
         
-        {/* Logo / Home */}
-        <Link to="/" style={{ textDecoration: 'none', color: 'white', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{ backgroundColor: 'rgba(255,255,255,0.2)', padding: '8px', borderRadius: '8px' }}><LayoutGrid size={24} /></div>
-            <div>
-                <h2 style={{ margin: 0, fontSize: '16px', lineHeight: '1.2' }}>Sistema Créditos</h2>
-                <div style={{ display: 'flex', flexDirection: 'column' }}>
-                    <span style={{ fontSize: '11px', color: '#fbbf24', fontWeight: 'bold', letterSpacing: '0.5px' }}>{nombreEmpresa.toUpperCase()}</span>
-                    <span style={{ fontSize: '10px', opacity: 0.8 }}>{tituloRol}</span>
-                </div>
-            </div>
-        </Link>
-
-        {/* Acciones Derecha */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
-            <Link to="/perfil" style={{ color: 'white', display: 'flex', alignItems: 'center' }}>
-                <UserCircle size={28} />
-            </Link>
-            <div style={{ width: '1px', height: '24px', backgroundColor: 'rgba(255,255,255,0.3)' }}></div>
-            <button onClick={handleLogout} title="Cerrar Sesión" style={{ backgroundColor: 'rgba(255,0,0,0.8)', color: 'white', border: 'none', padding: '8px', borderRadius: '6px', cursor: 'pointer' }}><LogOut size={20}/></button>
+        {/* HEADER DEL MENÚ */}
+        <div style={{ padding: '25px', borderBottom: '1px solid #f3f4f6', textAlign: 'center' }}>
+          <h2 style={{ margin: 0, color: '#2563eb', fontSize: '22px', fontWeight: '900', letterSpacing: '-1px' }}>
+            SISTEMAS JR
+          </h2>
+          {/* ETIQUETA DE ROL VISIBLE */}
+          <div style={{ 
+            marginTop: '10px', 
+            display: 'inline-block', 
+            padding: '4px 12px', 
+            borderRadius: '20px', 
+            fontSize: '11px', 
+            fontWeight: 'bold',
+            backgroundColor: esSuperAdmin ? '#111827' : rol === 'ADMIN' ? '#7c3aed' : '#f59e0b',
+            color: 'white'
+          }}>
+            {esSuperAdmin ? 'DUEÑO / SUPER ADMIN' : rol === 'ADMIN' ? 'GERENTE SUCURSAL' : 'COBRADOR'}
+          </div>
         </div>
-      </nav>
 
-      {/* --- AQUÍ SE RENDERIZAN LAS PÁGINAS (Hijos) --- */}
-      <div style={{ padding: '20px', maxWidth: '1200px', margin: '0 auto' }}>
+        {/* LISTA DE NAVEGACIÓN */}
+        <nav style={{ flex: 1, padding: '20px', display: 'flex', flexDirection: 'column', gap: '8px', overflowY: 'auto' }}>
+          
+          <Link to="/" style={{ ...linkStyle, ...isActive('/') }}>
+            <LayoutDashboard size={20} /> Dashboard
+          </Link>
+
+          {/* SECCIÓN OPERATIVA (Visible para Admin, Gerente y Cobradores) */}
+          <Link to="/rutas-cobro" style={{ ...linkStyle, ...isActive('/rutas-cobro') }}>
+            <Map size={20} /> Rutas de Cobro
+          </Link>
+          
+          <Link to="/clientes" style={{ ...linkStyle, ...isActive('/clientes') }}>
+            <Users size={20} /> Clientes
+          </Link>
+
+          {/* SECCIÓN FINANCIERA (Oculta para Cobradores) */}
+          {(esSuperAdmin || rol === 'ADMIN') && (
+            <>
+              <div style={seccionTitulo}>FINANZAS</div>
+              <Link to="/caja" style={{ ...linkStyle, ...isActive('/caja') }}>
+                <Calculator size={20} /> Cierre de Caja
+              </Link>
+              <Link to="/capital" style={{ ...linkStyle, ...isActive('/capital') }}>
+                <Banknote size={20} /> Capital & Inversión
+              </Link>
+              <Link to="/liquidacion" style={{ ...linkStyle, ...isActive('/liquidacion') }}>
+                <TrendingUp size={20} /> Liquidación
+              </Link>
+            </>
+          )}
+
+          {/* SECCIÓN AVANZADA (EXCLUSIVA SUPER ADMIN - DUEÑO) */}
+          {esSuperAdmin && (
+            <>
+              <div style={seccionTitulo}>ADMINISTRACIÓN</div>
+              <Link to="/admin" style={{ ...linkStyle, ...isActive('/admin') }}>
+                <ShieldCheck size={20} /> Panel Avanzado
+              </Link>
+              <Link to="/enrutador" style={{ ...linkStyle, ...isActive('/enrutador') }}>
+                <Map size={20} /> Editor de Rutas
+              </Link>
+            </>
+          )}
+
+        </nav>
+
+        {/* FOOTER - USUARIO */}
+        <div style={{ padding: '20px', borderTop: '1px solid #f3f4f6', backgroundColor: '#f9fafb' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '15px' }}>
+            <div style={{ width: '35px', height: '35px', borderRadius: '50%', backgroundColor: '#bfdbfe', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#1e40af', fontWeight: 'bold' }}>
+              {usuario.nombre_completo?.charAt(0) || 'U'}
+            </div>
+            <div style={{ overflow: 'hidden' }}>
+              <div style={{ fontSize: '13px', fontWeight: 'bold', color: '#1f2937', whiteSpace: 'nowrap', textOverflow: 'ellipsis', overflow: 'hidden', maxWidth: '140px' }}>
+                {usuario.nombre_completo}
+              </div>
+              <div style={{ fontSize: '11px', color: '#6b7280' }}>
+                {usuario.email || 'Sin email'}
+              </div>
+            </div>
+          </div>
+          
+          <div style={{ display: 'flex', gap: '5px' }}>
+             <Link to="/perfil" style={{ flex: 1, textAlign: 'center', padding: '8px', borderRadius: '6px', border: '1px solid #d1d5db', color: '#374151', fontSize: '12px', textDecoration: 'none' }}>
+                <UserCircle size={14} style={{marginBottom:'-2px'}}/> Perfil
+             </Link>
+             <button onClick={cerrarSesion} style={{ flex: 1, backgroundColor: '#fee2e2', color: '#dc2626', border: '1px solid #fecaca', borderRadius: '6px', padding: '8px', fontSize: '12px', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '5px' }}>
+                <LogOut size={14} /> Salir
+             </button>
+          </div>
+        </div>
+
+      </aside>
+
+      {/* --- CONTENIDO PRINCIPAL --- */}
+      <main style={{ flex: 1, marginLeft: '260px', padding: '30px', maxWidth: '1600px' }}>
         <Outlet />
-      </div>
+      </main>
 
     </div>
   );
 }
+
+// Estilos auxiliares
+const linkStyle = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+  padding: '12px 15px',
+  borderRadius: '8px',
+  color: '#4b5563',
+  textDecoration: 'none',
+  fontSize: '14px',
+  fontWeight: '500',
+  transition: 'all 0.2s'
+};
+
+const seccionTitulo = {
+  fontSize: '11px',
+  fontWeight: 'bold',
+  color: '#9ca3af',
+  marginTop: '15px',
+  marginBottom: '5px',
+  paddingLeft: '15px',
+  letterSpacing: '1px'
+};
